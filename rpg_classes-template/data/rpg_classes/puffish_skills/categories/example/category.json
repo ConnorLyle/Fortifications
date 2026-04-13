@@ -1,5 +1,7 @@
 {
 	"title": "Example",
+	"exclusive_root": true,
+	"starting_points": "2",
 	"icon": {
 		"type": "item",
 		"data": {
