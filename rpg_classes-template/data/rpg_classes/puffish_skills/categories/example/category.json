@@ -1,12 +1,17 @@
 {
-	"title": "Example",
+	"title": "Classes",
 	"exclusive_root": true,
 	"starting_points": "2",
 	"icon": {
 		"type": "item",
 		"data": {
-			"item": "iron_sword"
+			"item": "irons_spellbooks:expulsion_ring"
 		}
 	},
-	"background": "textures/gui/advancements/backgrounds/stone.png"
+	"background": {
+    	"texture": "minecraft:textures/gui/title/background/panorama_0.png",
+		"width": 1024,
+		"height": 1024,
+		"position": "fill"
+	}
 }
