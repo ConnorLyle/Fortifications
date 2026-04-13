@@ -3,55 +3,55 @@
 		"definition": "Warrior Class - Base",
 		"x": -33.37383539249432,
 		"y": -102.71410375987658,
-		"root": false
+		"root": true
 	},
 	"49x98andv4fhqu1y": {
 		"definition": "Paladin Class - Base",
 		"x": -87.37383539249433,
 		"y": -63.4808072475871,
-		"root": false
+		"root": true
 	},
 	"vhmn50h2vvhcqpw8": {
 		"definition": "Knight Class - Base",
 		"x": -108,
 		"y": -6.6130927153957075e-15,
-		"root": false
+		"root": true
 	},
 	"ifrc8i8yrs5y5kfh": {
 		"definition": "Rouge Class - Base",
 		"x": -87.37383539249433,
 		"y": 63.48080724758709,
-		"root": false
+		"root": true
 	},
 	"ybbzd0wc724d9d9q": {
 		"definition": "Sorcerer Class - Base",
 		"x": 33.37383539249433,
 		"y": 102.71410375987658,
-		"root": false
+		"root": true
 	},
 	"gz7ibag5vfu788j8": {
 		"definition": "Archer Class - Base",
 		"x": 87.37383539249433,
 		"y": 63.48080724758709,
-		"root": false
+		"root": true
 	},
 	"eqj3aqbws6sfia3p": {
 		"definition": "Monk Class - Base",
 		"x": 108,
 		"y": -6.6130927153957075e-15,
-		"root": false
+		"root": true
 	},
 	"sjw5kdbkl0u48qlu": {
 		"definition": "Spellblade Class - Base",
 		"x": 87.37383539249433,
 		"y": -63.4808072475871,
-		"root": false
+		"root": true
 	},
 	"cvgt04w6qy4p3cfg": {
 		"definition": "Magebreaker Class - Base",
 		"x": 33.37383539249432,
 		"y": -102.71410375987658,
-		"root": false
+		"root": true
 	},
 	"ory9vuy9yly3typu": {
 		"definition": "Elemental Mage Class - Base",
