@@ -211,7 +211,7 @@
 			}
 		},
 		"description": "Mr. Steal yo shit",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +10% attack speed\n- +10% crit chance\n- +10% crit damage\n- Spell power -15%\n- Swift sneak\n- Base speed +7.5%\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -239,7 +239,7 @@
 			}
 		},
 		"description": "Like a wizard, but indecisive",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +5% generic spell power\n- +10% cooldown reduction\n- +10% mana regeneration\n- +10% cast speed\n- +50 max mana\n- -2 max hp\n- -15% melee attack damage\n- -20% arrow damage\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -268,7 +268,7 @@
 			}
 		},
 		"description": "For some reason there is 12 seperate bow mods...",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +20% draw speed\n- +20% arrow damage\n- +10% crit change\n- +10% crit damage\n- -10% spell power\n- +5% base speed\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -296,7 +296,7 @@
 			}
 		},
 		"description": "Look up Paunch on Steam, this is that.",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- Unarmed attack damage +4\n- Unarmed attack speed +25%\n- For each empty armor slot, +3 armor +1 toughness\n- +5% base movement speed\n- -25% arrow damage\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -324,7 +324,7 @@
 			}
 		},
 		"description": "Sword and Spell, Not much else to say..",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +5% generic spell power\n- +25 max mana \n- +7.5% mana regeneration\n- +10% melee damage\n- -25% arrow damage\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -352,7 +352,7 @@
 			}
 		},
 		"description": "Magic isn't real, it can't hurt me",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +30% magic damage resistance\n- +2 armor, +1 armor toughness\n- +10% melee damage\n- +10% arrow damage\n- +10% draw speed\n- -35% spell power\n- -50 max mana\n- -20% cooldown reduction\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -379,7 +379,7 @@
 			}
 		},
 		"description": "Sorcerer, But decisive",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +10% cooldown reduction\n- +10% mana regeneration\n- +10% cast speed\n- +50 max mana\n- -2 max hp\n- -15% melee attack damage\n- -20% arrow damage\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -407,7 +407,7 @@
 			}
 		},
 		"description": ",One of many, many mancers",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% fire spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -435,7 +435,7 @@
 			}
 		},
 		"description": "One of many, many mancers",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% ice spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -463,7 +463,7 @@
 			}
 		},
 		"description": "One of many, many mancers",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% lightning spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -491,7 +491,7 @@
 			}
 		},
 		"description": "One of many, many mancers",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% nature spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -519,7 +519,7 @@
 			}
 		},
 		"description": "One of many, many mancers",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% holy spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -547,7 +547,7 @@
 			}
 		},
 		"description": "One of many, many mancers",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% blood spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -575,7 +575,7 @@
 			}
 		},
 		"description": "One of many, many mancers",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% sound spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -603,7 +603,7 @@
 			}
 		},
 		"description": "Sorcerer, But decisive",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% geo spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -631,7 +631,7 @@
 			}
 		},
 		"description": "One of many, many mancers",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% eldritch spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -659,7 +659,7 @@
 			}
 		},
 		"description": "One of many, many mancers",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% ender spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
@@ -687,7 +687,7 @@
 			}
 		},
 		"description": "One of many, many mancers",
-		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"extra_description": "\n- +12.5% evocation spell power\n",
 		"rewards": [
 			{
 				"type": "puffish_skills:attribute", 
