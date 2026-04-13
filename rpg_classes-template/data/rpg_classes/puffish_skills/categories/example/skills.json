@@ -1,20 +1,128 @@
 {
-	"tznvsi9aenb4bn73": {
-		"definition": "movement_speed+5%",
-		"x": 32,
-		"y": 18.475208614068023,
+	"1djd8ocu2rmmwch8": {
+		"definition": "Warrior Class - Base",
+		"x": -33.37383539249432,
+		"y": -102.71410375987658,
+		"root": false
+	},
+	"49x98andv4fhqu1y": {
+		"definition": "Paladin Class - Base",
+		"x": -87.37383539249433,
+		"y": -63.4808072475871,
+		"root": false
+	},
+	"vhmn50h2vvhcqpw8": {
+		"definition": "Knight Class - Base",
+		"x": -108,
+		"y": -6.6130927153957075e-15,
+		"root": false
+	},
+	"ifrc8i8yrs5y5kfh": {
+		"definition": "Rouge Class - Base",
+		"x": -87.37383539249433,
+		"y": 63.48080724758709,
+		"root": false
+	},
+	"ybbzd0wc724d9d9q": {
+		"definition": "Sorcerer Class - Base",
+		"x": 33.37383539249433,
+		"y": 102.71410375987658,
+		"root": false
+	},
+	"gz7ibag5vfu788j8": {
+		"definition": "Archer Class - Base",
+		"x": 87.37383539249433,
+		"y": 63.48080724758709,
+		"root": false
+	},
+	"eqj3aqbws6sfia3p": {
+		"definition": "Monk Class - Base",
+		"x": 108,
+		"y": -6.6130927153957075e-15,
+		"root": false
+	},
+	"sjw5kdbkl0u48qlu": {
+		"definition": "Spellblade Class - Base",
+		"x": 87.37383539249433,
+		"y": -63.4808072475871,
+		"root": false
+	},
+	"cvgt04w6qy4p3cfg": {
+		"definition": "Magebreaker Class - Base",
+		"x": 33.37383539249432,
+		"y": -102.71410375987658,
+		"root": false
+	},
+	"ory9vuy9yly3typu": {
+		"definition": "Elemental Mage Class - Base",
+		"x": -33.37383539249433,
+		"y": 102.71410375987658,
 		"root": true
 	},
-	"dzev2sy2c5utgihz": {
-		"definition": "mana+2",
-		"x": 0,
-		"y": -32,
-		"root": true
+	"79t60e42inyi45ef": {
+		"definition": "Elemental Mage Class - Fire",
+		"x": -90.00000000000006,
+		"y": 155.88457268119893,
+		"root": false
 	},
-	"rjubsl182mo3235c": {
-		"definition": "mage_-2hp",
-		"x": -32,
-		"y": 0,
-		"root": true
+	"0j9kqpq4txrypxh6": {
+		"definition": "Elemental Mage Class - Ice",
+		"x": -55.62305898749063,
+		"y": 171.19017293312763,
+		"root": false
+	},
+	"0iyfcmq4jhzy145h": {
+		"definition": "Elemental Mage Class - Lightning",
+		"x": -18.81512338817767,
+		"y": 179.0139411662892,
+		"root": false
+	},
+	"ngjwsqswk7vmbu5s": {
+		"definition": "Elemental Mage Class - Nature",
+		"x": -108.00000000000007,
+		"y": 187.06148721743872,
+		"root": false
+	},
+	"glk802dfd8cn7pee": {
+		"definition": "Elemental Mage Class - Holy",
+		"x": -66.74767078498876,
+		"y": 205.42820751975313,
+		"root": false
+	},
+	"191pvan5ej501wrd": {
+		"definition": "Elemental Mage Class - Blood",
+		"x": -22.578148065813206,
+		"y": 214.81672939954703,
+		"root": false
+	},
+	"czuhphn8j3yvha7x": {
+		"definition": "Elemental Mage Class - Sound",
+		"x": -131.66963830841914,
+		"y": 214.86532141723123,
+		"root": false
+	},
+	"eva64nv3pfj9wupm": {
+		"definition": "Elemental Mage Class - Geo",
+		"x": -96.43622495600265,
+		"y": 232.81764219284426,
+		"root": false
+	},
+	"wz0nz3twnucnepzm": {
+		"definition": "Elemental Mage Class - Eldritch",
+		"x": -58.828231691688195,
+		"y": 245.0372199402145,
+		"root": false
+	},
+	"ag9pwijz0ikrjozn": {
+		"definition": "Elemental Mage Class - Ender",
+		"x": -19.77169212341696,
+		"y": 251.22316810074824,
+		"root": false
+	},
+	"6h9gypnqq7kt8p79": {
+		"definition": "Elemental Mage Class - Evo",
+		"x": -44.49844718999244,
+		"y": 136.9521383465021,
+		"root": false
 	}
 }

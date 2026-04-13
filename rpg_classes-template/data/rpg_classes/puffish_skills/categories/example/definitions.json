@@ -1,57 +1,700 @@
 {
-	"mana+2": {
-		"title": "Max Mana",
+	"Warrior Class - Base": {
+		"title": "The Warrior",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
 		"icon": {
-			"type": "effect",
+			"type": "item",
 			"data": {
-				"effect": "haste"
+				"item": "mowziesmobs:wrought_helmet"
 			}
 		},
+		"description": "Stick them with the pointy end.",
+		"extra_description": "\n- Melee attack damage +15% \n- +2 max hp \n- +1 armor \n- Spell power -25% \n- -25% arrow damage\n",
 		"rewards": [
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "puffish_attributes:melee_damage",
+					"value": 0.15,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "generic.max_health",
+					"value": 2,
+					"operation": "addition"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "generic.armor",
+					"value": 1,
+					"operation": "addition"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:spell_power",
+					"value": -0.25,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "apothic_attributes:arrow_damage",
+					"value": -0.25,
+					"operation": "multiply_base"
+				}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "give @s minecraft:diamond"
+		}
+}
+			
+		]
+	},
+	"Paladin Class - Base": {
+		"title": "The Paladin",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "alshanex_familiars:cleric_trinket"
+			}
+		},
+		"description": "Praise be the Tulip.",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "irons_spellbooks:mana_regen",
+					"value": 0.05,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "irons_spellbooks:cooldown_reduction",
+					"value": 0.05,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "irons_spellbooks:cast_time_reduction",
+					"value": 0.05,
+					"operation": "multiply_base"
+				}
+			},
 			{
 				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:max_mana",
+					"value": 25,
+					"operation": "addition"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "irons_spellbooks:spell_resist",
+					"value": 0.10,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "irons_spellbooks:spell_power",
+					"value": -0.10,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "apothic_attributes:arrow_damage",
+					"value": -0.25,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "generic.armor",
 					"value": 2,
 					"operation": "addition"
 				}
-			}
-		]
-	},
-	"mage_-2hp": {
-		"title": "-2 Max HP",
-		"icon": {
-			"type": "effect",
-			"data": {
-				"effect": "health_boost"
-			}
-		},
-		"rewards": [
+			},
 			{
 				"type": "puffish_skills:attribute",
 				"data": {
-					"attribute": "generic.max_health",
-					"value": -2.0,
+					"attribute": "generic.armor_toughness",
+					"value": 1,
 					"operation": "addition"
 				}
 			}
 		]
 	},
-	"movement_speed+5%": {
-		"title": "+5% Movement Speed",
+	"Knight Class - Base": {
+		"title": "The Knight",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "simplymore:iron_lance"
+			}
+		},
+		"description": "somehow has nothing to do with horses",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Rouge Class - Base": {
+		"title": "The Rouge",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "alexscaves:desolate_dagger"
+			}
+		},
+		"description": "Mr. Steal yo shit",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Sorcerer Class - Base": {
+		"title": "The Sorcerer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
 		"icon": {
 			"type": "effect",
 			"data": {
-				"effect": "speed"
+				"effect": "spell_power:critical_chance"
 			}
 		},
+		"description": "Like a wizard, but indecisive",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute",
+				"type": "puffish_skills:attribute", 
 				"data": {
-					"attribute": "generic.movement_speed",
-					"value": 0.05,
-					"operation": "multiply_total"
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	
+	"Archer Class - Base": {
+		"title": "The Archer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "too_many_bows:sentinels_wrath"
+			}
+		},
+		"description": "For some reason there is 12 seperate bow mods...",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Monk Class - Base": {
+		"title": "The Monk",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "simplymore:ruyi_jingu_bang"
+			}
+		},
+		"description": "Look up Paunch on Steam, this is that.",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Spellblade Class - Base": {
+		"title": "The Spellblade",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "simplyswords:awakened_lichblade"
+			}
+		},
+		"description": "Sword and Spell, Not much else to say..",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Magebreaker Class - Base": {
+		"title": "The Magebreaker",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "effect",
+			"data": {
+				"effect": "gtbcs_geomancy_plus:aegis"
+			}
+		},
+		"description": "Magic isn't real, it can't hurt me",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	}, "Elemental Mage Class - Base": {
+		"title": "The Elemental Mage",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "irons_spellbooks:gold_spell_book"
+			}
+		},
+		"description": "Sorcerer, But decisive",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Fire": {
+		"title": "The Pyromancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "irons_spellbooks:fire_rune"
+			}
+		},
+		"description": ",One of many, many mancers",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Ice": {
+		"title": "The Cryomancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "irons_spellbooks:ice_rune"
+			}
+		},
+		"description": "One of many, many mancers",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Lightning": {
+		"title": "The Electromancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "irons_spellbooks:lightning_rune"
+			}
+		},
+		"description": "One of many, many mancers",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Nature": {
+		"title": "The Biomancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "irons_spellbooks:nature_rune"
+			}
+		},
+		"description": "One of many, many mancers",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Holy": {
+		"title": "The Theomancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "irons_spellbooks:holy_rune"
+			}
+		},
+		"description": "One of many, many mancers",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Blood": {
+		"title": "The Hemomancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "irons_spellbooks:blood_rune"
+			}
+		},
+		"description": "One of many, many mancers",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Sound": {
+		"title": "The Sonomancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "alshanex_familiars:sound_rune"
+			}
+		},
+		"description": "One of many, many mancers",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Geo": {
+		"title": "The Geomancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "gtbcs_geomancy_plus:geo_rune"
+			}
+		},
+		"description": "Sorcerer, But decisive",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Eldritch": {
+		"title": "The Jellymancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "irons_spellbooks:eldritch_manuscript"
+			}
+		},
+		"description": "One of many, many mancers",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Ender": {
+		"title": "The Endermancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "irons_spellbooks:ender_rune"
+			}
+		},
+		"description": "One of many, many mancers",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			}
+		]
+	},
+	"Elemental Mage Class - Evo": {
+		"title": "The Evomancer",
+		"frame": {
+		"type": "advancement",
+		 "data": {
+			"frame": "challenge"
+		 }
+
+		},
+		"icon": {
+			"type": "item",
+			"data": {
+				"item": "irons_spellbooks:evocation_rune"
+			}
+		},
+		"description": "One of many, many mancers",
+		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute", 
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
 				}
 			}
 		]
