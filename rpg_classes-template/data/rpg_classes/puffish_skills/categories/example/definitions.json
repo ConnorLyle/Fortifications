@@ -23,7 +23,7 @@
 		"icon": {
 			"type": "effect",
 			"data": {
-				"item": "heath_boost"
+				"effect": "health_boost"
 			}
 		},
 		"rewards": [
