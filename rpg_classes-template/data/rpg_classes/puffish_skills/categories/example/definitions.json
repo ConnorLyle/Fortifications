@@ -1,0 +1,59 @@
+{
+	"mana+2": {
+		"title": "Max Mana",
+		"icon": {
+			"type": "effect",
+			"data": {
+				"effect": "haste"
+			}
+		},
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "irons_spellbooks:max_mana",
+					"value": 2,
+					"operation": "addition"
+				}
+			}
+		]
+	},
+	"mage_-2hp": {
+		"title": "-2 Max HP",
+		"icon": {
+			"type": "effect",
+			"data": {
+				"item": "heath_boost"
+			}
+		},
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "generic.max_health",
+					"value": -2.0,
+					"operation": "addition"
+				}
+			}
+		]
+	},
+	"movement_speed+5%": {
+		"title": "+5% Movement Speed",
+		"icon": {
+			"type": "effect",
+			"data": {
+				"effect": "speed"
+			}
+		},
+		"rewards": [
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "generic.movement_speed",
+					"value": 0.05,
+					"operation": "multiply_total"
+				}
+			}
+		]
+	}
+}

@@ -1,0 +1,12 @@
+{
+	"schemaVersion": 1,
+	"id": "rpg_classes",
+	"version": "1.0",
+	"name": "RPG classes",
+	"description": "",
+	"authors": [
+		"Pufferfish's Template Generator"
+	],
+	"license": "Unlicense",
+	"environment": "*"
+}

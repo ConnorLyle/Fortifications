@@ -1,0 +1,10 @@
+modLoader="lowcodefml"
+loaderVersion="[1,)"
+license="Unlicense"
+
+[[mods]]
+modId="rpg_classes"
+version="1.0"
+displayName="RPG classes"
+description=""
+authors="Pufferfish's Template Generator"

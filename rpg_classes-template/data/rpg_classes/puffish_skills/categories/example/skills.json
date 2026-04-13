@@ -1,0 +1,20 @@
+{
+	"tznvsi9aenb4bn73": {
+		"definition": "movement_speed+5%",
+		"x": 32,
+		"y": 18.475208614068023,
+		"root": true
+	},
+	"dzev2sy2c5utgihz": {
+		"definition": "mana+2",
+		"x": 0,
+		"y": -32,
+		"root": true
+	},
+	"rjubsl182mo3235c": {
+		"definition": "mage_-2hp",
+		"x": -32,
+		"y": 0,
+		"root": true
+	}
+}
