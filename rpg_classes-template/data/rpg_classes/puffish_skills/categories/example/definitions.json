@@ -315,7 +315,7 @@
 		"icon": {
 			"type": "effect",
 			"data": {
-				"effect": "spell_power:critical_chance"
+				"effect": "iron_spellbooks:wizard_hat"
 			}
 		},
 		"description": "Like a wizard, but indecisive",
@@ -894,7 +894,7 @@
 		"icon": {
 			"type": "item",
 			"data": {
-				"item": "alshanex_familiars:sound_rune"
+				"item": "tunes_n_times:melody_rune"
 			}
 		},
 		"description": "One of many, many mancers",
@@ -903,7 +903,7 @@
 			{
 				"type": "puffish_skills:attribute", 
 				"data": {
-					"attribute": "familiarslib:sound_spell_power",
+					"attribute": "tunes_n_times:melody_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
