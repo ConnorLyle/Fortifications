@@ -315,7 +315,7 @@
 		"icon": {
 			"type": "item",
 			"data": {
-				"item": "iron_spellbooks:wizard_hat"
+				"item": "irons_spellbooks:wizard_hat"
 			}
 		},
 		"description": "Like a wizard, but indecisive",
