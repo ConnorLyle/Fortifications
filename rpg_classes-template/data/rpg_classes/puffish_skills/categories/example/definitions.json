@@ -313,9 +313,9 @@
 
 		},
 		"icon": {
-			"type": "effect",
+			"type": "item",
 			"data": {
-				"effect": "iron_spellbooks:wizard_hat"
+				"item": "iron_spellbooks:wizard_hat"
 			}
 		},
 		"description": "Like a wizard, but indecisive",
@@ -894,7 +894,7 @@
 		"icon": {
 			"type": "item",
 			"data": {
-				"item": "tunes_n_times:melody_rune"
+				"item": "tunes_n_tomes:melody_rune"
 			}
 		},
 		"description": "One of many, many mancers",
@@ -903,7 +903,7 @@
 			{
 				"type": "puffish_skills:attribute", 
 				"data": {
-					"attribute": "tunes_n_times:melody_spell_power",
+					"attribute": "tunes_n_tomes:melody_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
