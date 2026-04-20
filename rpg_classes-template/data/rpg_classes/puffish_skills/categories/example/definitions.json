@@ -61,7 +61,7 @@
 			{
 		"type": "puffish_skills:command",
 		"data": {
-		"command": "give @s minecraft:diamond"
+		"command": "sk give @s warrior"
 		}
 }
 			
@@ -164,7 +164,14 @@
 					"value": 1,
 					"operation": "addition"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s paladin"
+		}
+}
 		]
 	},
 	"Knight Class - Base": {
@@ -182,7 +189,7 @@
 				"item": "simplymore:iron_lance"
 			}
 		},
-		"description": "somehow has nothing to do with horses",
+		"description": "HONSE",
 		"extra_description": "\n- Melee attack +10%\n- Armor +2\n- Toughness +1\n- +15% magic resistance\n- Spell power -25%\n- -25% arrow damage\n",
 		"rewards": [
 			{
@@ -232,7 +239,13 @@
 					"value": -0.25,
 					"operation": "multiply_base"
 				}
-			}
+			},
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s knight"
+		}
+		}
 		]
 	},
 	"Rouge Class - Base": {
@@ -300,7 +313,13 @@
 					"value": 0.075,
 					"operation": "multiply_total"
 				}
-			}
+			},
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s rouge"
+		}
+		}
 		]
 	},
 	"Sorcerer Class - Base": {
@@ -384,7 +403,13 @@
 					"value": -0.20,
 					"operation": "multiply_base"
 				}
-			}
+			},
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s sorcerer"
+		}
+		}
 		]
 	},
 	
@@ -453,7 +478,13 @@
 					"value": 0.05,
 					"operation": "multiply_total"
 				}
-			}
+			},
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s archer"
+		}
+		}
 		]
 	},
 	"Monk Class - Base": {
@@ -541,7 +572,13 @@
 					"value": -0.25,
 					"operation": "multiply_base"
 				}
-			}
+			},
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s monk"
+		}
+		}
 		]
 	},
 	"Magebreaker Class - Base": {
@@ -554,9 +591,9 @@
 
 		},
 		"icon": {
-			"type": "effect",
+			"type": "item",
 			"data": {
-				"effect": "gtbcs_geomancy_plus:aegis"
+				"item": "irons_spellbooks:spellbreaker"
 			}
 		},
 		"description": "Magic isn't real, it can't hurt me",
@@ -633,7 +670,13 @@
 					"value": -0.20,
 					"operation": "multiply_base"
 				}
-			}
+			},
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s magebreaker"
+		}
+		}
 		]
 	}, "Elemental Mage Class - Base": {
 		"title": "The Elemental Mage",
@@ -739,7 +782,13 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s firemage"
+		}
+		}
 		]
 	},
 	"Elemental Mage Class - Ice": {
@@ -767,7 +816,14 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s icemage"
+		}
+}
 		]
 	},
 	"Elemental Mage Class - Lightning": {
@@ -795,7 +851,14 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s lightningmage"
+		}
+}
 		]
 	},
 	"Elemental Mage Class - Nature": {
@@ -823,7 +886,14 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s naturemage"
+		}
+}
 		]
 	},
 	"Elemental Mage Class - Holy": {
@@ -851,7 +921,14 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s holymage"
+		}
+}
 		]
 	},
 	"Elemental Mage Class - Blood": {
@@ -879,7 +956,14 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s bloodmage"
+		}
+}
 		]
 	},
 	"Elemental Mage Class - Sound": {
@@ -907,7 +991,14 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s soundmage"
+		}
+}
 		]
 	},
 	"Elemental Mage Class - Geo": {
@@ -935,7 +1026,14 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s geomage"
+		}
+}
 		]
 	},
 	"Elemental Mage Class - Eldritch": {
@@ -963,7 +1061,14 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s eldritchmage"
+		}
+}
 		]
 	},
 	"Elemental Mage Class - Ender": {
@@ -991,7 +1096,14 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s endermage"
+		}
+}
 		]
 	},
 	"Elemental Mage Class - Evo": {
@@ -1019,7 +1131,14 @@
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
-			}
+			},
+
+			{
+		"type": "puffish_skills:command",
+		"data": {
+		"command": "sk give @s evomage"
+		}
+}
 		]
 	}
 }
