@@ -2,11 +2,10 @@
 	"Warrior Class - Base": {
 		"title": "The Warrior",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "challenge"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "challenge"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -26,7 +25,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "generic.max_health",
 					"value": 2,
@@ -42,7 +41,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:spell_power",
 					"value": -0.25,
@@ -50,31 +49,28 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "apothic_attributes:arrow_damage",
 					"value": -0.25,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s warrior"
-		}
-}
-			
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s warrior"
+				}
+			}
 		]
 	},
 	"Paladin Class - Base": {
 		"title": "The Paladin",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "challenge"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "challenge"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -86,7 +82,7 @@
 		"extra_description": "\n- Holy spell power increase 10%\n- +5% mana regeneration\n- +5% cooldown reduction\n- +5% cast speed\n- +25 max mana\n- +10% magic resistance\n- All other spell powers -10%\n- -25% arrow damage\n- Armor +2\n- Armor toughness +1\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:holy_spell_power",
 					"value": 0.20,
@@ -142,7 +138,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "apothic_attributes:arrow_damage",
 					"value": -0.25,
@@ -165,23 +161,21 @@
 					"operation": "addition"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s paladin"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s paladin"
+				}
+			}
 		]
 	},
 	"Knight Class - Base": {
 		"title": "The Knight",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "challenge"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "challenge"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -233,7 +227,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "apothic_attributes:arrow_damage",
 					"value": -0.25,
@@ -241,21 +235,20 @@
 				}
 			},
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s knight"
-		}
-		}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s knight"
+				}
+			}
 		]
 	},
 	"Rouge Class - Base": {
 		"title": "The Rouge",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "challenge"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "challenge"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -267,7 +260,7 @@
 		"extra_description": "\n- +10% attack speed\n- +10% crit chance\n- +10% crit damage\n- Spell power -15%\n- Swift sneak\n- Base speed +7.5%\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "generic.attack_speed",
 					"value": 0.10,
@@ -315,21 +308,20 @@
 				}
 			},
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s rouge"
-		}
-		}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s rouge"
+				}
+			}
 		]
 	},
 	"Sorcerer Class - Base": {
 		"title": "The Sorcerer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "challenge"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "challenge"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -341,7 +333,7 @@
 		"extra_description": "\n- +5% generic spell power\n- +10% cooldown reduction\n- +10% mana regeneration\n- +10% cast speed\n- +50 max mana\n- -2 max hp\n- -15% melee attack damage\n- -20% arrow damage\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:spell_power",
 					"value": 0.05,
@@ -357,7 +349,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:mana_regen",
 					"value": 0.10,
@@ -365,7 +357,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:cast_time_reduction",
 					"value": 0.10,
@@ -373,7 +365,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:max_mana",
 					"value": 50,
@@ -397,7 +389,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "apothic_attributes:arrow_damage",
 					"value": -0.20,
@@ -405,22 +397,20 @@
 				}
 			},
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s sorcerer"
-		}
-		}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s sorcerer"
+				}
+			}
 		]
 	},
-	
 	"Archer Class - Base": {
 		"title": "The Archer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "challenge"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "challenge"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -432,7 +422,7 @@
 		"extra_description": "\n- +20% draw speed\n- +20% arrow damage\n- +10% crit change\n- +10% crit damage\n- -10% spell power\n- +5% base speed\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "apothic_attributes:draw_speed",
 					"value": 0.20,
@@ -440,7 +430,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "apothic_attributes:arrow_damage",
 					"value": 0.20,
@@ -480,21 +470,20 @@
 				}
 			},
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s archer"
-		}
-		}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s archer"
+				}
+			}
 		]
 	},
 	"Monk Class - Base": {
 		"title": "The Monk",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "challenge"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "challenge"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -506,11 +495,59 @@
 		"extra_description": "\n- Unarmed attack damage +4\n- Unarmed attack speed +25%\n- For each empty armor slot, +3 armor +1 toughness\n- +5% base movement speed\n- -25% arrow damage\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"name": "Unarmed attack damage",
+				"condition": {
+					"type": "origins:equipped_item",
+					"equipment_slot": "mainhand",
+					"item_condition": {
+						"type": "origins:empty"
+					}
+				},
+				"type": "origins:conditioned_attribute",
+				"modifier": {
+					"attribute": "minecraft:generic.attack_damage",
+					"operation": "addition",
+					"value": 4
+				},
+				"tick_rate": 20,
+				"update_health": true
+			},
+			{
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:holy_spell_power",
 					"value": 0.20,
 					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:attribute",
+				"data": {
+					"attribute": "irons_spellbooks:holy_spell_power",
+					"value": 0.20,
+					"operation": "multiply_base"
+				}
+			},
+			{
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s monk"
 				}
 			}
 		]
@@ -518,11 +555,10 @@
 	"Spellblade Class - Base": {
 		"title": "The Spellblade",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "challenge"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "challenge"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -534,7 +570,7 @@
 		"extra_description": "\n- +5% generic spell power\n- +25 max mana \n- +7.5% mana regeneration\n- +10% melee damage\n- -25% arrow damage\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:spell_power",
 					"value": 0.05,
@@ -542,7 +578,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:max_mana",
 					"value": 25,
@@ -550,7 +586,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:mana_regen",
 					"value": 0.075,
@@ -566,7 +602,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "apothic_attributes:arrow_damage",
 					"value": -0.25,
@@ -574,21 +610,20 @@
 				}
 			},
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s monk"
-		}
-		}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s monk"
+				}
+			}
 		]
 	},
 	"Magebreaker Class - Base": {
 		"title": "The Magebreaker",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "challenge"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "challenge"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -600,7 +635,7 @@
 		"extra_description": "\n- +30% magic damage resistance\n- +2 armor, +1 armor toughness\n- +10% melee damage\n- +10% arrow damage\n- +10% draw speed\n- -35% spell power\n- -50 max mana\n- -20% cooldown reduction\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:spell_resist",
 					"value": 0.30,
@@ -632,7 +667,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "apothic_attributes:arrow_damage",
 					"value": 0.10,
@@ -640,7 +675,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "apothic_attributes:draw_speed",
 					"value": 0.10,
@@ -656,7 +691,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:max_mana",
 					"value": -50,
@@ -664,7 +699,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:cooldown_reduction",
 					"value": -0.20,
@@ -672,20 +707,20 @@
 				}
 			},
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s magebreaker"
-		}
-		}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s magebreaker"
+				}
+			}
 		]
-	}, "Elemental Mage Class - Base": {
+	},
+	"Elemental Mage Class - Base": {
 		"title": "The Elemental Mage",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "challenge"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "challenge"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -696,9 +731,6 @@
 		"description": "Sorcerer, But decisive",
 		"extra_description": "\n- +10% cooldown reduction\n- +10% mana regeneration\n- +10% cast speed\n- +50 max mana\n- -2 max hp\n- -15% melee attack damage\n- -20% arrow damage\n",
 		"rewards": [
-			
-				
-			
 			{
 				"type": "puffish_skills:attribute",
 				"data": {
@@ -708,7 +740,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:mana_regen",
 					"value": 0.10,
@@ -716,7 +748,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:cast_time_reduction",
 					"value": 0.10,
@@ -724,7 +756,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:max_mana",
 					"value": 50,
@@ -748,7 +780,7 @@
 				}
 			},
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "apothic_attributes:arrow_damage",
 					"value": -0.20,
@@ -760,11 +792,10 @@
 	"Elemental Mage Class - Fire": {
 		"title": "The Pyromancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -776,7 +807,7 @@
 		"extra_description": "\n- +12.5% fire spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:fire_spell_power",
 					"value": 0.125,
@@ -784,21 +815,20 @@
 				}
 			},
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s firemage"
-		}
-		}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s firemage"
+				}
+			}
 		]
 	},
 	"Elemental Mage Class - Ice": {
 		"title": "The Cryomancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -810,30 +840,28 @@
 		"extra_description": "\n- +12.5% ice spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:ice_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s icemage"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s icemage"
+				}
+			}
 		]
 	},
 	"Elemental Mage Class - Lightning": {
 		"title": "The Electromancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -845,30 +873,28 @@
 		"extra_description": "\n- +12.5% lightning spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:lightning_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s lightningmage"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s lightningmage"
+				}
+			}
 		]
 	},
 	"Elemental Mage Class - Nature": {
 		"title": "The Biomancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -880,30 +906,28 @@
 		"extra_description": "\n- +12.5% nature spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:nature_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s naturemage"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s naturemage"
+				}
+			}
 		]
 	},
 	"Elemental Mage Class - Holy": {
 		"title": "The Theomancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -915,30 +939,28 @@
 		"extra_description": "\n- +12.5% holy spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:holy_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s holymage"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s holymage"
+				}
+			}
 		]
 	},
 	"Elemental Mage Class - Blood": {
 		"title": "The Hemomancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -950,30 +972,28 @@
 		"extra_description": "\n- +12.5% blood spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:blood_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s bloodmage"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s bloodmage"
+				}
+			}
 		]
 	},
 	"Elemental Mage Class - Sound": {
 		"title": "The Sonomancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -985,30 +1005,28 @@
 		"extra_description": "\n- +12.5% sound spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "tunes_n_tomes:melody_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s soundmage"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s soundmage"
+				}
+			}
 		]
 	},
 	"Elemental Mage Class - Geo": {
 		"title": "The Geomancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -1020,30 +1038,28 @@
 		"extra_description": "\n- +12.5% geo spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "gtbcs_geomancy_plus:geo_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s geomage"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s geomage"
+				}
+			}
 		]
 	},
 	"Elemental Mage Class - Eldritch": {
 		"title": "The Jellymancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -1055,30 +1071,28 @@
 		"extra_description": "\n- +12.5% eldritch spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:eldritch_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s eldritchmage"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s eldritchmage"
+				}
+			}
 		]
 	},
 	"Elemental Mage Class - Ender": {
 		"title": "The Endermancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -1090,30 +1104,28 @@
 		"extra_description": "\n- +12.5% ender spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:ender_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s endermage"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s endermage"
+				}
+			}
 		]
 	},
 	"Elemental Mage Class - Evo": {
 		"title": "The Evomancer",
 		"frame": {
-		"type": "advancement",
-		 "data": {
-			"frame": "goal"
-		 }
-
+			"type": "advancement",
+			"data": {
+				"frame": "goal"
+			}
 		},
 		"icon": {
 			"type": "item",
@@ -1125,20 +1137,19 @@
 		"extra_description": "\n- +12.5% evocation spell power\n",
 		"rewards": [
 			{
-				"type": "puffish_skills:attribute", 
+				"type": "puffish_skills:attribute",
 				"data": {
 					"attribute": "irons_spellbooks:evocation_spell_power",
 					"value": 0.125,
 					"operation": "multiply_base"
 				}
 			},
-
 			{
-		"type": "puffish_skills:command",
-		"data": {
-		"command": "sk give @s evomage"
-		}
-}
+				"type": "puffish_skills:command",
+				"data": {
+					"command": "sk give @s evomage"
+				}
+			}
 		]
 	}
 }
