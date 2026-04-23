@@ -1,128 +1,86 @@
 {
 	"1djd8ocu2rmmwch8": {
 		"definition": "Warrior Class - Base",
-		"x": -33.37383539249432,
-		"y": -102.71410375987658,
+		"x": -107.0608970174173,
+		"y": -118.9031720763831,
 		"root": true
 	},
 	"49x98andv4fhqu1y": {
 		"definition": "Paladin Class - Base",
-		"x": -87.37383539249433,
-		"y": -63.4808072475871,
+		"x": -146.16727322281614,
+		"y": -65.07786289212804,
 		"root": true
 	},
 	"vhmn50h2vvhcqpw8": {
 		"definition": "Knight Class - Base",
-		"x": -108,
-		"y": -6.6130927153957075e-15,
+		"x": -160,
+		"y": -9.797174393178826e-15,
 		"root": true
 	},
 	"ifrc8i8yrs5y5kfh": {
 		"definition": "Rouge Class - Base",
-		"x": -87.37383539249433,
-		"y": 63.48080724758709,
+		"x": -146.16727322281616,
+		"y": 65.07786289212801,
 		"root": true
 	},
 	"ybbzd0wc724d9d9q": {
 		"definition": "Sorcerer Class - Base",
-		"x": 33.37383539249433,
-		"y": 102.71410375987658,
+		"x": -107.06089701741733,
+		"y": 118.90317207638304,
 		"root": true
 	},
 	"gz7ibag5vfu788j8": {
 		"definition": "Archer Class - Base",
-		"x": 87.37383539249433,
-		"y": 63.48080724758709,
-		"root": true
-	},
-	"eqj3aqbws6sfia3p": {
-		"definition": "Elementalist Class - Base",
-		"x": 108,
-		"y": -6.6130927153957075e-15,
+		"x": -49.44271909999167,
+		"y": 152.16904260722455,
 		"root": true
 	},
 	"sjw5kdbkl0u48qlu": {
 		"definition": "Spellblade Class - Base",
-		"x": 87.37383539249433,
-		"y": -63.4808072475871,
+		"x": 16.724554122824554,
+		"y": -159.12350325892373,
 		"root": true
 	},
 	"cvgt04w6qy4p3cfg": {
 		"definition": "Magebreaker Class - Base",
-		"x": 33.37383539249432,
-		"y": -102.71410375987658,
+		"x": -49.442719099991585,
+		"y": -152.16904260722455,
 		"root": true
 	},
-	"ory9vuy9yly3typu": {
-		"definition": "Elemental Mage Class - Base",
-		"x": -33.37383539249433,
-		"y": 102.71410375987658,
+	"sqf569fr5jcqk7qo": {
+		"definition": "Elementalist Class - Base",
+		"x": 79.99999999999999,
+		"y": -138.5640646055102,
 		"root": true
 	},
-	"79t60e42inyi45ef": {
-		"definition": "Elemental Mage Class - Fire",
-		"x": -90.00000000000006,
-		"y": 155.88457268119893,
-		"root": false
+	"9cel5uzwsuqwrtcz": {
+		"definition": "Druid Class - Base",
+		"x": 129.4427190999916,
+		"y": -94.04564036679571,
+		"root": true
 	},
-	"0j9kqpq4txrypxh6": {
-		"definition": "Elemental Mage Class - Ice",
-		"x": -55.62305898749063,
-		"y": 171.19017293312763,
-		"root": false
+	"0fqu2oqt335m8dzn": {
+		"definition": "Unaturalist Class - Base",
+		"x": 156.50361611740888,
+		"y": -33.26587053084151,
+		"root": true
 	},
-	"0iyfcmq4jhzy145h": {
-		"definition": "Elemental Mage Class - Lightning",
-		"x": -18.81512338817767,
-		"y": 179.0139411662892,
-		"root": false
+	"7j72panzjlmwv2y8": {
+		"definition": "Pyrotechnic Class - Base",
+		"x": 156.5036161174089,
+		"y": 33.26587053084146,
+		"root": true
 	},
-	"ngjwsqswk7vmbu5s": {
-		"definition": "Elemental Mage Class - Nature",
-		"x": -108.00000000000007,
-		"y": 187.06148721743872,
-		"root": false
+	"0k68yt4rdrxg29ut": {
+		"definition": "Apostle Class - Base",
+		"x": 129.4427190999916,
+		"y": 94.04564036679568,
+		"root": true
 	},
-	"glk802dfd8cn7pee": {
-		"definition": "Elemental Mage Class - Holy",
-		"x": -66.74767078498876,
-		"y": 205.42820751975313,
-		"root": false
-	},
-	"191pvan5ej501wrd": {
-		"definition": "Elemental Mage Class - Blood",
-		"x": -22.578148065813206,
-		"y": 214.81672939954703,
-		"root": false
-	},
-	"czuhphn8j3yvha7x": {
-		"definition": "Elemental Mage Class - Sound",
-		"x": -131.66963830841914,
-		"y": 214.86532141723123,
-		"root": false
-	},
-	"eva64nv3pfj9wupm": {
-		"definition": "Elemental Mage Class - Geo",
-		"x": -96.43622495600265,
-		"y": 232.81764219284426,
-		"root": false
-	},
-	"wz0nz3twnucnepzm": {
-		"definition": "Elemental Mage Class - Eldritch",
-		"x": -58.828231691688195,
-		"y": 245.0372199402145,
-		"root": false
-	},
-	"ag9pwijz0ikrjozn": {
-		"definition": "Elemental Mage Class - Ender",
-		"x": -19.77169212341696,
-		"y": 251.22316810074824,
-		"root": false
-	},
-	"6h9gypnqq7kt8p79": {
-		"definition": "Elemental Mage Class - Evo",
-		"x": -44.49844718999244,
-		"y": 136.9521383465021,
-		"root": false
+	"izd0ui7geudx3x2d": {
+		"definition": "Astrologer  Class - Base",
+		"x": 16.724554122824596,
+		"y": 159.12350325892373,
+		"root": true
 	}
 }
