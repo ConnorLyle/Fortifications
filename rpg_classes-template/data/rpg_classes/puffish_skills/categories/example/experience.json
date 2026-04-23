@@ -1,5 +1,5 @@
 {
-	"level_limit": "2",
+	"level_limit": "1",
 	
 	"experience_per_level": {
 		"type": "expression",
