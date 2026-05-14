@@ -1,0 +1,16 @@
+{
+	"title": "Classes",
+	"exclusive_root": true,
+	"icon": {
+		"type": "item",
+		"data": {
+			"item": "irons_spellbooks:expulsion_ring"
+		}
+	},
+	"background": {
+    	"texture": "minecraft:textures/gui/title/background/panorama_0.png",
+		"width": 1024,
+		"height": 1024,
+		"position": "fill"
+	}
+}

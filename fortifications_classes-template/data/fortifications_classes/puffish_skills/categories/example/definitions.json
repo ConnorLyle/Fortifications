@@ -335,11 +335,11 @@
       {
         "type": "puffish_skills:attribute",
         "data": {
-          "attribute": "puffish_attributes:unarmed_damage",
+          "attribute": "equalbreak:unarmed_damage",
           "value": 4,
           "operation": "addition"
         }
-      },
+	},
       {
         "type": "puffish_skills:attribute",
         "data": {

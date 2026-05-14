@@ -1,0 +1,28 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="MIT"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+description='''
+Adds a keybind (default: J) that toggles Equal Break mode.
+While active, every block breaks at the same speed as deepslate.
+Unbreakable and instant-break blocks are unaffected.
+'''
+authors="${mod_authors}"
+
+[[dependencies.equalbreak]]
+    modId="neoforge"
+    type="required"
+    versionRange="${neoforge_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.equalbreak]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"

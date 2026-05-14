@@ -1,6 +1,6 @@
 {
 	"level_limit": "1",
-	"starting_points": "1",
+	
 	"experience_per_level": {
 		"type": "expression",
 		"data": {
