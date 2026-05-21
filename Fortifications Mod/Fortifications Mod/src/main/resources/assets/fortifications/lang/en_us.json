@@ -2,6 +2,7 @@
   "itemGroup.fortifications": "Fortifications Mod",
   "block.fortifications.example_block": "Example Block",
   "item.fortifications.example_item": "Example Item",
+  "attribute.name.fortifications.unarmed_damage": "Unarmed Damage",
 
   "fortifications.configuration.title": "Fortifications Mod Configs",
   "fortifications.configuration.section.fortifications.common.toml": "Fortifications Mod Configs",
