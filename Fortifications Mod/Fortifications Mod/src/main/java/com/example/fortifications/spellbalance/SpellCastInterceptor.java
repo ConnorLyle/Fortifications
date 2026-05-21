@@ -56,10 +56,9 @@ public final class SpellCastInterceptor {
     @SubscribeEvent
     public static void onSpellCooldownAdded(SpellCooldownAddedEvent.Pre event) {
         String spellId = event.getSpell().getSpellId();
-        double[] cooldownSeconds = SpellBalanceConfig.COOLDOWN_SECONDS_BY_LEVEL.get(spellId);
-        if (cooldownSeconds != null) {
-            int spellLevel = RECENT_PLAYER_CAST_LEVELS.getOrDefault(new CastKey(event.getEntity().getUUID(), spellId), 1);
-            event.setEffectiveCooldown((int) Math.round(doubleForLevel(cooldownSeconds, spellLevel) * 20.0D));
+        int cooldownTicks = getBalancedCooldownTicks(event.getEntity(), spellId);
+        if (cooldownTicks >= 0) {
+            event.setEffectiveCooldown(cooldownTicks);
         }
     }
 
@@ -155,6 +154,16 @@ public final class SpellCastInterceptor {
 
     private static double doubleForLevel(double[] values, int spellLevel) {
         return values[Math.max(0, Math.min(values.length - 1, spellLevel - 1))];
+    }
+
+    public static int getBalancedCooldownTicks(Player player, String spellId) {
+        double[] cooldownSeconds = SpellBalanceConfig.COOLDOWN_SECONDS_BY_LEVEL.get(spellId);
+        if (cooldownSeconds == null) {
+            return -1;
+        }
+
+        int spellLevel = RECENT_PLAYER_CAST_LEVELS.getOrDefault(new CastKey(player.getUUID(), spellId), 1);
+        return (int) Math.round(doubleForLevel(cooldownSeconds, spellLevel) * 20.0D);
     }
 
     private static float blackHoleRadiusForVanillaRadius(float vanillaRadius) {

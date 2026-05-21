@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "FrostStepSpellMixin",
+    "MagicManagerMixin",
     "PetriviseSpellMixin",
     "PortalSpellMixin"
   ],
