@@ -28,6 +28,12 @@ sourceSets.main.resources {
 
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
+    maven {
+        url = "https://www.cursemaven.com"
+        content {
+            includeGroup "curse.maven"
+        }
+    }
 }
 
 base {
@@ -118,6 +124,11 @@ configurations {
 }
 
 dependencies {
+    implementation "curse.maven:architectury-api-419699:5553800"
+    implementation "curse.maven:ftb-library-forge-404465:7746959"
+    implementation "curse.maven:ftb-teams-forge-404468:7878281"
+    implementation "curse.maven:ftb-chunks-forge-314906:7608681"
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"

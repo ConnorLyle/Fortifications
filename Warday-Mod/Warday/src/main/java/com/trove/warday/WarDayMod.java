@@ -6,12 +6,14 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -28,8 +30,9 @@ public class WarDayMod {
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
 
-    public static final DeferredBlock<Block> NEXUS = BLOCKS.registerSimpleBlock("nexus", warDayBlockProperties());
-    public static final DeferredBlock<Block> FORWARD_MARKER = BLOCKS.registerSimpleBlock("forward_marker", warDayBlockProperties());
+    public static final DeferredBlock<NexusBlock> NEXUS = BLOCKS.register("nexus", () -> new NexusBlock(warDayBlockProperties()));
+    public static final DeferredBlock<ForwardMarkerBlock> FORWARD_MARKER =
+            BLOCKS.register("forward_marker", () -> new ForwardMarkerBlock(unbreakableWarDayBlockProperties()));
 
     public static final DeferredItem<BlockItem> NEXUS_ITEM = ITEMS.registerSimpleBlockItem("nexus", NEXUS);
     public static final DeferredItem<BlockItem> FORWARD_MARKER_ITEM = ITEMS.registerSimpleBlockItem("forward_marker", FORWARD_MARKER);
@@ -45,10 +48,12 @@ public class WarDayMod {
                     })
                     .build());
 
-    public WarDayMod(IEventBus modEventBus) {
+    public WarDayMod(IEventBus modEventBus, ModContainer modContainer) {
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
+        modContainer.registerConfig(ModConfig.Type.SERVER, WarDayConfig.SPEC);
+        NeoForge.EVENT_BUS.register(new WarDayCommands());
     }
 
     private static BlockBehaviour.Properties warDayBlockProperties() {
@@ -56,6 +61,13 @@ public class WarDayMod {
                 .mapColor(MapColor.COLOR_CYAN)
                 .strength(50.0F, 1200.0F)
                 .requiresCorrectToolForDrops()
+                .sound(SoundType.GLASS);
+    }
+
+    private static BlockBehaviour.Properties unbreakableWarDayBlockProperties() {
+        return BlockBehaviour.Properties.of()
+                .mapColor(MapColor.COLOR_CYAN)
+                .strength(-1.0F, 3600000.0F)
                 .sound(SoundType.GLASS);
     }
 }
