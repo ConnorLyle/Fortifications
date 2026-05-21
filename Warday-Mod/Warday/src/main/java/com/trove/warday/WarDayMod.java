@@ -33,9 +33,11 @@ public class WarDayMod {
     public static final DeferredBlock<NexusBlock> NEXUS = BLOCKS.register("nexus", () -> new NexusBlock(warDayBlockProperties()));
     public static final DeferredBlock<ForwardMarkerBlock> FORWARD_MARKER =
             BLOCKS.register("forward_marker", () -> new ForwardMarkerBlock(unbreakableWarDayBlockProperties()));
+    public static final DeferredBlock<NexusBlock> ATTACKER_SPAWN = BLOCKS.register("attacker_spawn", () -> new NexusBlock(warDayBlockProperties()));
 
     public static final DeferredItem<BlockItem> NEXUS_ITEM = ITEMS.registerSimpleBlockItem("nexus", NEXUS);
     public static final DeferredItem<BlockItem> FORWARD_MARKER_ITEM = ITEMS.registerSimpleBlockItem("forward_marker", FORWARD_MARKER);
+    public static final DeferredItem<BlockItem> ATTACKER_SPAWN_ITEM = ITEMS.registerSimpleBlockItem("attacker_spawn", ATTACKER_SPAWN);
 
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> WAR_DAY_TAB =
             CREATIVE_MODE_TABS.register("war_day", () -> CreativeModeTab.builder()
@@ -45,6 +47,7 @@ public class WarDayMod {
                     .displayItems((parameters, output) -> {
                         output.accept(NEXUS_ITEM.get());
                         output.accept(FORWARD_MARKER_ITEM.get());
+                        output.accept(ATTACKER_SPAWN_ITEM.get());
                     })
                     .build());
 

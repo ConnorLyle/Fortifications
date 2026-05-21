@@ -38,6 +38,10 @@ public final class FortificationsSpellBalance {
     public static final String GTBC_FLAMES_REBORN = "gametechbcs_spellbooks:flames_reborn";
 
     private static final Field CAST_TIME_FIELD = findAbstractSpellField("castTime");
+    private static final Field BASE_MANA_COST_FIELD = findAbstractSpellField("baseManaCost");
+    private static final Field MANA_COST_PER_LEVEL_FIELD = findAbstractSpellField("manaCostPerLevel");
+    private static final Field BASE_SPELL_POWER_FIELD = findAbstractSpellField("baseSpellPower");
+    private static final Field SPELL_POWER_PER_LEVEL_FIELD = findAbstractSpellField("spellPowerPerLevel");
 
     private FortificationsSpellBalance() {}
 
@@ -54,19 +58,26 @@ public final class FortificationsSpellBalance {
             event.setDefaultValue(IronConfigParameters.ALLOW_CRAFTING, false);
         }
 
-        Double cooldownSeconds = SpellBalanceConfig.COOLDOWN_SECONDS.get(spellId);
+        double[] cooldownSeconds = SpellBalanceConfig.COOLDOWN_SECONDS_BY_LEVEL.get(spellId);
         if (cooldownSeconds != null) {
-            event.setDefaultValue(IronConfigParameters.COOLDOWN_IN_SECONDS, cooldownSeconds);
+            event.setDefaultValue(IronConfigParameters.COOLDOWN_IN_SECONDS, cooldownSeconds[0]);
         }
 
-        Double manaMultiplier = SpellBalanceConfig.MANA_MULTIPLIERS.get(spellId);
-        if (manaMultiplier != null) {
-            event.setDefaultValue(IronConfigParameters.MANA_MULTIPLIER, manaMultiplier);
-        }
+        event.setDefaultValue(IronConfigParameters.MANA_MULTIPLIER, 1.0D);
 
         Double powerMultiplier = SpellBalanceConfig.POWER_MULTIPLIERS.get(spellId);
         if (powerMultiplier != null) {
             event.setDefaultValue(IronConfigParameters.POWER_MULTIPLIER, powerMultiplier);
+        } else {
+            event.setDefaultValue(IronConfigParameters.POWER_MULTIPLIER, 1.0D);
+        }
+
+        SpellBalanceConfig.SpellFields fields = SpellBalanceConfig.SPELL_FIELDS.get(spellId);
+        if (fields != null) {
+            setOptionalIntField(BASE_MANA_COST_FIELD, spell, fields.baseManaCost());
+            setOptionalIntField(MANA_COST_PER_LEVEL_FIELD, spell, fields.manaCostPerLevel());
+            setOptionalIntField(BASE_SPELL_POWER_FIELD, spell, fields.baseSpellPower());
+            setOptionalIntField(SPELL_POWER_PER_LEVEL_FIELD, spell, fields.spellPowerPerLevel());
         }
 
         Integer castTimeTicks = SpellBalanceConfig.CAST_TIME_TICKS.get(spellId);
@@ -90,6 +101,12 @@ public final class FortificationsSpellBalance {
             field.setInt(spell, value);
         } catch (IllegalAccessException exception) {
             throw new IllegalStateException("Unable to update spell field " + field.getName(), exception);
+        }
+    }
+
+    private static void setOptionalIntField(Field field, AbstractSpell spell, Integer value) {
+        if (value != null) {
+            setIntField(field, spell, value);
         }
     }
 }

@@ -17,11 +17,15 @@ import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.living.MobEffectEvent;
 
 import java.lang.reflect.Field;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @EventBusSubscriber(modid = FortificationsMod.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
 public final class SpellCastInterceptor {
 
     private static final Field EFFECT_DURATION_FIELD = findMobEffectField("duration");
+    private static final Map<CastKey, Integer> RECENT_PLAYER_CAST_LEVELS = new ConcurrentHashMap<>();
 
     private SpellCastInterceptor() {}
 
@@ -37,25 +41,36 @@ public final class SpellCastInterceptor {
 
     @SubscribeEvent
     public static void onSpellOnCast(SpellOnCastEvent event) {
-        Double manaMultiplier = SpellBalanceConfig.MANA_MULTIPLIERS.get(event.getSpellId());
-        if (manaMultiplier != null) {
-            event.setManaCost((int) Math.ceil(event.getManaCost() * manaMultiplier));
+        String spellId = event.getSpellId();
+        int spellLevel = event.getSpellLevel();
+        RECENT_PLAYER_CAST_LEVELS.put(new CastKey(event.getEntity().getUUID(), spellId), spellLevel);
+
+        int[] manaCosts = SpellBalanceConfig.MANA_COSTS.get(spellId);
+        if (manaCosts != null) {
+            event.setManaCost(intForLevel(manaCosts, spellLevel));
         }
     }
 
     @SubscribeEvent
     public static void onSpellCooldownAdded(SpellCooldownAddedEvent.Pre event) {
         String spellId = event.getSpell().getSpellId();
-        Double cooldownSeconds = SpellBalanceConfig.COOLDOWN_SECONDS.get(spellId);
+        double[] cooldownSeconds = SpellBalanceConfig.COOLDOWN_SECONDS_BY_LEVEL.get(spellId);
         if (cooldownSeconds != null) {
-            event.setEffectiveCooldown((int) Math.round(cooldownSeconds * 20.0D));
+            int spellLevel = RECENT_PLAYER_CAST_LEVELS.getOrDefault(new CastKey(event.getEntity().getUUID(), spellId), 1);
+            event.setEffectiveCooldown((int) Math.round(doubleForLevel(cooldownSeconds, spellLevel) * 20.0D));
         }
     }
 
     @SubscribeEvent
     public static void onSpellDamage(SpellDamageEvent event) {
         if (event.getSpellDamageSource().spell().getSpellId().equals(FortificationsSpellBalance.GTBC_NULLFLARE)) {
-            event.setAmount(event.getAmount() * SpellBalanceConfig.NULLFLARE_DAMAGE_MULTIPLIER);
+            int spellLevel = event.getSpellDamageSource().getEntity() == null
+                    ? 1
+                    : RECENT_PLAYER_CAST_LEVELS.getOrDefault(
+                            new CastKey(event.getSpellDamageSource().getEntity().getUUID(), FortificationsSpellBalance.GTBC_NULLFLARE),
+                            1
+                    );
+            event.setAmount(floatForLevel(new float[] {7.0F, 10.0F, 13.0F, 16.0F, 20.0F}, spellLevel));
         }
     }
 
@@ -67,7 +82,8 @@ public final class SpellCastInterceptor {
 
         // Black Hole is safer to nerf by radius because the spawned entity exposes a public radius setter.
         if (event.getEntity() instanceof BlackHole blackHole) {
-            blackHole.setRadius(blackHole.getRadius() * SpellBalanceConfig.BLACK_HOLE_RADIUS_MULTIPLIER);
+            blackHole.setRadius(blackHoleRadiusForVanillaRadius(blackHole.getRadius()));
+            blackHole.setDuration(SpellBalanceConfig.BLACK_HOLE_DURATION_TICKS);
         }
 
         if (event.getEntity() instanceof PortalEntity portalEntity) {
@@ -93,12 +109,12 @@ public final class SpellCastInterceptor {
         }
 
         if (effectId.equals("irons_spellbooks:charged")) {
-            scaleEffectDuration(event.getEffectInstance(), SpellBalanceConfig.CHARGE_DURATION_MULTIPLIER);
+            setEffectDuration(event.getEffectInstance(), intForLevel(new int[] {15 * 20, 20 * 20, 25 * 20}, event.getEffectInstance().getAmplifier() + 1));
             return;
         }
 
         if (effectId.equals("irons_spellbooks:hastened")) {
-            scaleEffectDuration(event.getEffectInstance(), SpellBalanceConfig.HASTENED_DURATION_MULTIPLIER);
+            setEffectDuration(event.getEffectInstance(), SpellBalanceConfig.HASTENED_DURATION_TICKS);
         }
     }
 
@@ -107,10 +123,6 @@ public final class SpellCastInterceptor {
                 Component.literal("This spell is banned.").withStyle(ChatFormatting.RED),
                 true
         );
-    }
-
-    private static void scaleEffectDuration(MobEffectInstance effectInstance, double multiplier) {
-        setEffectDuration(effectInstance, Math.max(1, (int) Math.round(effectInstance.getDuration() * multiplier)));
     }
 
     private static void setEffectDuration(MobEffectInstance effectInstance, int durationTicks) {
@@ -130,4 +142,23 @@ public final class SpellCastInterceptor {
             throw new IllegalStateException("Minecraft mob effect field not found: " + name, exception);
         }
     }
+
+    private static int intForLevel(int[] values, int spellLevel) {
+        return values[Math.max(0, Math.min(values.length - 1, spellLevel - 1))];
+    }
+
+    private static float floatForLevel(float[] values, int spellLevel) {
+        return values[Math.max(0, Math.min(values.length - 1, spellLevel - 1))];
+    }
+
+    private static double doubleForLevel(double[] values, int spellLevel) {
+        return values[Math.max(0, Math.min(values.length - 1, spellLevel - 1))];
+    }
+
+    private static float blackHoleRadiusForVanillaRadius(float vanillaRadius) {
+        int spellLevel = Math.max(1, Math.min(6, Math.round((vanillaRadius - 4.125F) / 2.0F)));
+        return floatForLevel(new float[] {2.0F, 4.0F, 5.0F, 6.0F, 7.0F, 8.0F}, spellLevel);
+    }
+
+    private record CastKey(UUID playerId, String spellId) {}
 }

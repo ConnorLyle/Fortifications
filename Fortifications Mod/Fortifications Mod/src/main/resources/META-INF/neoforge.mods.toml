@@ -13,6 +13,9 @@ Unbreakable and instant-break blocks are unaffected.
 '''
 authors="${mod_authors}"
 
+[[mixins]]
+config="fortifications.mixins.json"
+
 [[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"

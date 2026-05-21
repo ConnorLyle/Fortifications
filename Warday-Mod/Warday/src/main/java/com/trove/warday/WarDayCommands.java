@@ -19,14 +19,24 @@ import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.entity.decoration.Painting;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
@@ -34,10 +44,13 @@ import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public class WarDayCommands {
@@ -53,6 +66,12 @@ public class WarDayCommands {
                         .executes(context -> validate(context.getSource())))
                 .then(Commands.literal("scan")
                         .executes(context -> scan(context.getSource())))
+                .then(Commands.literal("status")
+                        .executes(context -> status(context.getSource())))
+                .then(Commands.literal("start")
+                        .executes(context -> start(context.getSource())))
+                .then(Commands.literal("end")
+                        .executes(context -> end(context.getSource())))
                 .then(Commands.literal("prepare")
                         .executes(context -> preparePreview(context.getSource()))
                         .then(Commands.literal("confirm")
@@ -132,7 +151,7 @@ public class WarDayCommands {
         source.sendSuccess(() -> message(ChatFormatting.AQUA,
                 "War Day validation for " + WarDayConfig.TEAM_A_NAME.get() + " vs " + WarDayConfig.TEAM_B_NAME.get()), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
-                "Base spacing target: " + WarDayConfig.BASE_SPACING_BLOCKS.getAsInt() + " blocks"), false);
+                "Copied defender base preserves source X/Y/Z coordinates."), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "Scanning " + context.radius() + " blocks around " + context.level().dimension().location() + " " + formatPos(context.center())), false);
 
@@ -140,14 +159,16 @@ public class WarDayCommands {
         reportBlocks(source, "forward marker", context.forwardMarkers());
 
         TeamValidation teamAValidation = validateTeamMarkers(context.teamA(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
-        TeamValidation teamBValidation = validateTeamMarkers(context.teamB(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
+        Optional<AttackerValidation> attackerValidation = context.teamB().map(team -> validateAttackerSpawn(team, context.attackerSpawns()));
         reportTeamValidation(source, teamAValidation);
-        reportTeamValidation(source, teamBValidation);
+        attackerValidation.ifPresent(validation -> reportAttackerValidation(source, validation));
 
-        boolean passed = teamAValidation.passed() && teamBValidation.passed();
+        boolean passed = teamAValidation.passed() && attackerValidation.map(AttackerValidation::passed).orElse(true);
         if (passed) {
             source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                    "Validation passed: each configured team has one nexus and one forward marker in the same connected claimed chunk cluster."), true);
+                    context.teamB().isPresent()
+                            ? "Validation passed: defender base and attacker spawn are configured."
+                            : "Validation passed in one-team testing mode."), true);
             return 1;
         }
 
@@ -164,18 +185,18 @@ public class WarDayCommands {
 
         ScanContext context = scanContext.get();
         source.sendSuccess(() -> message(ChatFormatting.AQUA,
-                "War Day scan for " + context.teamA().getName().getString() + " vs " + context.teamB().getName().getString()), false);
+                "War Day scan for defender " + context.teamA().getName().getString()
+                        + context.teamB().map(team -> " vs attacker " + team.getName().getString()).orElse(" one-team test")), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "Scanning " + context.radius() + " blocks around " + context.level().dimension().location() + " " + formatPos(context.center())), false);
 
         TeamValidation teamAValidation = validateTeamMarkers(context.teamA(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
-        TeamValidation teamBValidation = validateTeamMarkers(context.teamB(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
+        Optional<AttackerValidation> attackerValidation = context.teamB().map(team -> validateAttackerSpawn(team, context.attackerSpawns()));
         reportTeamScan(source, teamAValidation, context.chunkManager());
-        reportTeamScan(source, teamBValidation, context.chunkManager());
+        attackerValidation.ifPresent(validation -> reportAttackerValidation(source, validation));
         reportGuardrails(source, teamAValidation, context.chunkManager());
-        reportGuardrails(source, teamBValidation, context.chunkManager());
 
-        boolean passed = teamAValidation.passed() && teamBValidation.passed();
+        boolean passed = teamAValidation.passed() && attackerValidation.map(AttackerValidation::passed).orElse(true);
         if (!passed) {
             source.sendFailure(message(ChatFormatting.RED,
                     "Scan could not resolve both base areas. Run /warday validate for marker-specific failures."));
@@ -196,14 +217,11 @@ public class WarDayCommands {
         ResolvedBases bases = resolved.get();
         source.sendSuccess(() -> message(ChatFormatting.AQUA, "War Day prepare preview only. No blocks were copied."), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY, "Target dimension: " + WarDayConfig.WAR_DAY_DIMENSION.get()), false);
-        source.sendSuccess(() -> message(ChatFormatting.GRAY, "Base spacing: " + WarDayConfig.BASE_SPACING_BLOCKS.getAsInt() + " blocks"), false);
-        source.sendSuccess(() -> message(ChatFormatting.GRAY, "Target Y: " + WarDayConfig.WAR_DAY_BASE_Y.getAsInt()), false);
+        source.sendSuccess(() -> message(ChatFormatting.GRAY, "Source X/Y/Z coordinates are preserved in the War Day dimension."), false);
 
-        int halfSpacing = WarDayConfig.BASE_SPACING_BLOCKS.getAsInt() / 2;
-        PlacementPlan teamAPlan = PlacementPlan.from(bases.teamA(), new BlockPos(-halfSpacing, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0));
-        PlacementPlan teamBPlan = PlacementPlan.from(bases.teamB(), new BlockPos(halfSpacing, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0));
-        reportPlacementPlan(source, teamAPlan);
-        reportPlacementPlan(source, teamBPlan);
+        reportPlacementPlan(source, PlacementPlan.from(bases.teamA()));
+        bases.attackerSpawn().ifPresent(spawn -> source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                "Attacker spawn marker: " + spawn.dimension().location() + " " + formatPos(spawn.pos())), false));
 
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
                 "Next implementation step will copy these source chunk clusters into the target placements."), false);
@@ -229,33 +247,180 @@ public class WarDayCommands {
         }
 
         ResolvedBases bases = resolved.get();
-        int halfSpacing = WarDayConfig.BASE_SPACING_BLOCKS.getAsInt() / 2;
-        PlacementPlan teamAPlan = PlacementPlan.from(bases.teamA(), new BlockPos(-halfSpacing, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0));
-        PlacementPlan teamBPlan = PlacementPlan.from(bases.teamB(), new BlockPos(halfSpacing, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0));
+        PlacementPlan teamAPlan = PlacementPlan.from(bases.teamA());
 
         CopyCheck teamACheck = checkDestinationEmpty(source.getServer().getLevel(bases.teamA().dimension()), targetLevel, teamAPlan);
-        CopyCheck teamBCheck = checkDestinationEmpty(source.getServer().getLevel(bases.teamB().dimension()), targetLevel, teamBPlan);
         reportCopyCheck(source, bases.teamA().team().getName().getString(), teamACheck);
-        reportCopyCheck(source, bases.teamB().team().getName().getString(), teamBCheck);
 
-        if (!teamACheck.passed() || !teamBCheck.passed()) {
-            source.sendFailure(message(ChatFormatting.RED, "Prepare confirm refused to overwrite destination blocks."));
-            return 0;
+        if (!teamACheck.passed()) {
+            source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Destination conflicts found; wiping computed War Day destination areas before paste."), true);
         }
 
+        int teamAWiped = wipeDestinationArea(targetLevel, teamAPlan);
+        source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Wiped " + teamAWiped + " destination blocks from War Day target area."), true);
+
         CopyResult teamAResult = copyBase(source.getServer().getLevel(bases.teamA().dimension()), targetLevel, teamAPlan);
-        CopyResult teamBResult = copyBase(source.getServer().getLevel(bases.teamB().dimension()), targetLevel, teamBPlan);
+        EntityCopyResult teamAEntityResult = copyDecorativeEntities(source.getServer().getLevel(bases.teamA().dimension()), targetLevel, teamAPlan);
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
                 "Copied " + bases.teamA().team().getName().getString() + ": " + teamAResult.blocksCopied()
                         + " blocks, " + teamAResult.blockEntitiesCopied() + " block entities, "
-                        + teamAResult.containersCleared() + " containers cleared."), true);
-        source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Copied " + bases.teamB().team().getName().getString() + ": " + teamBResult.blocksCopied()
-                        + " blocks, " + teamBResult.blockEntitiesCopied() + " block entities, "
-                        + teamBResult.containersCleared() + " containers cleared."), true);
+                        + teamAResult.containersCleared() + " containers cleared, "
+                        + teamAEntityResult.entitiesCopied() + " decorative entities, "
+                        + teamAEntityResult.itemFramesCleared() + " item frames cleared."), true);
+        bases.attackerSpawn().ifPresent(spawn -> source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                "Attacker spawn recorded from " + spawn.dimension().location() + " " + formatPos(spawn.pos())), true));
+        WarDayState state = WarDayState.get(source.getServer());
+        state.markPrepared(
+                WarDayConfig.WAR_DAY_DIMENSION.get(),
+                bases.teamA().team().getName().getString(),
+                bases.attackerSpawn().isPresent() ? WarDayConfig.TEAM_B_NAME.get() : "",
+                teamAPlan.targetPos(bases.teamA().nexus().pos(), source.getServer().getLevel(bases.teamA().dimension()).getMinBuildHeight()),
+                bases.attackerSpawn().map(AttackerSpawn::pos).orElse(null)
+        );
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
                 "Copied bases are not rotated yet. Nexus win tracking will be added in a later pass."), false);
         return 1;
+    }
+
+    private int status(CommandSourceStack source) {
+        WarDayState state = WarDayState.get(source.getServer());
+        Optional<ResourceKey<Level>> dimensionKey = warDayDimensionKey(source);
+        boolean configuredDimensionLoaded = dimensionKey.map(key -> source.getServer().getLevel(key) != null).orElse(false);
+
+        source.sendSuccess(() -> message(ChatFormatting.AQUA, "War Day status"), false);
+        source.sendSuccess(() -> message(ChatFormatting.GRAY, "Configured defender team: " + WarDayConfig.TEAM_A_NAME.get()), false);
+        source.sendSuccess(() -> message(ChatFormatting.GRAY, "Configured attacker team: " + WarDayConfig.TEAM_B_NAME.get()), false);
+        source.sendSuccess(() -> message(configuredDimensionLoaded ? ChatFormatting.GREEN : ChatFormatting.RED,
+                "Configured dimension loaded: " + configuredDimensionLoaded + " (" + WarDayConfig.WAR_DAY_DIMENSION.get() + ")"), false);
+        source.sendSuccess(() -> message(state.isPrepared() ? ChatFormatting.GREEN : ChatFormatting.YELLOW,
+                "Prepared state saved: " + state.isPrepared()), false);
+        source.sendSuccess(() -> message(state.isActive() ? ChatFormatting.GREEN : ChatFormatting.GRAY,
+                "Active: " + state.isActive()), false);
+
+        if (state.isPrepared()) {
+            source.sendSuccess(() -> message(ChatFormatting.GRAY, "Saved dimension: " + state.warDayDimension()), false);
+            source.sendSuccess(() -> message(ChatFormatting.GRAY, "Saved defender team: " + state.defenderTeam()), false);
+            source.sendSuccess(() -> message(ChatFormatting.GRAY, "Saved attacker team: " + (state.attackerTeam().isBlank() ? "none" : state.attackerTeam())), false);
+            source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                    "Copied nexus: " + state.copiedNexusPos().map(WarDayCommands::formatPos).orElse("missing")), false);
+            source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                    "Attacker spawn: " + state.attackerSpawnPos().map(WarDayCommands::formatPos).orElse("missing")), false);
+            source.sendSuccess(() -> message(ChatFormatting.GREEN, "Next command: /warday start once start flow is implemented."), false);
+        } else {
+            source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Next command: /warday prepare confirm"), false);
+        }
+
+        return state.isPrepared() ? 1 : 0;
+    }
+
+    private int start(CommandSourceStack source) {
+        WarDayState state = WarDayState.get(source.getServer());
+        if (!state.isPrepared()) {
+            source.sendFailure(message(ChatFormatting.RED, "War Day is not prepared. Run /warday prepare confirm first."));
+            return 0;
+        }
+        if (state.isActive()) {
+            source.sendFailure(message(ChatFormatting.RED, "War Day is already active."));
+            return 0;
+        }
+        if (!FTBTeamsAPI.api().isManagerLoaded()) {
+            source.sendFailure(message(ChatFormatting.RED, "FTB Teams manager is not loaded."));
+            return 0;
+        }
+
+        Optional<ResourceKey<Level>> dimensionKey = warDayDimensionKey(source);
+        if (dimensionKey.isEmpty()) {
+            return 0;
+        }
+        ServerLevel warDayLevel = source.getServer().getLevel(dimensionKey.get());
+        if (warDayLevel == null) {
+            source.sendFailure(message(ChatFormatting.RED, "War Day dimension is not loaded: " + WarDayConfig.WAR_DAY_DIMENSION.get()));
+            return 0;
+        }
+
+        TeamManager teamManager = FTBTeamsAPI.api().getManager();
+        Optional<Team> defenderTeam = findTeamByConfiguredName(teamManager, WarDayConfig.TEAM_A_NAME.get());
+        Optional<Team> attackerTeam = findTeamByConfiguredName(teamManager, WarDayConfig.TEAM_B_NAME.get());
+        if (defenderTeam.isEmpty()) {
+            source.sendFailure(message(ChatFormatting.RED, "Defender team not found: " + WarDayConfig.TEAM_A_NAME.get()));
+            return 0;
+        }
+        if (attackerTeam.isEmpty()) {
+            source.sendFailure(message(ChatFormatting.RED, "Attacker team not found: " + WarDayConfig.TEAM_B_NAME.get()));
+            return 0;
+        }
+        if (state.copiedNexusPos().isEmpty() || state.attackerSpawnPos().isEmpty()) {
+            source.sendFailure(message(ChatFormatting.RED, "Prepared state is missing nexus or attacker spawn position. Rerun /warday prepare confirm."));
+            return 0;
+        }
+
+        Map<UUID, GameType> snapshots = new HashMap<>();
+        int defenders = 0;
+        int attackers = 0;
+        int spectators = 0;
+        Set<UUID> defenderIds = defenderTeam.get().getMembers();
+        Set<UUID> attackerIds = attackerTeam.get().getMembers();
+
+        for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
+            UUID id = player.getUUID();
+            snapshots.put(id, player.gameMode.getGameModeForPlayer());
+
+            if (defenderIds.contains(id)) {
+                teleportPlayer(player, warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0));
+                setPlayerSpawn(player, warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0));
+                player.setGameMode(GameType.SURVIVAL);
+                defenders++;
+            } else if (attackerIds.contains(id)) {
+                teleportPlayer(player, warDayLevel, state.attackerSpawnPos().get().offset(0, 1, 0));
+                setPlayerSpawn(player, warDayLevel, state.attackerSpawnPos().get().offset(0, 1, 0));
+                player.setGameMode(GameType.SURVIVAL);
+                attackers++;
+            } else {
+                player.setGameMode(GameType.SPECTATOR);
+                teleportPlayer(player, warDayLevel, state.attackerSpawnPos().get().offset(0, 12, 0));
+                spectators++;
+            }
+        }
+
+        state.start(snapshots);
+        source.getServer().getPlayerList().broadcastSystemMessage(
+                message(ChatFormatting.GREEN, "War Day started. Defenders=" + defenders + ", attackers=" + attackers + ", spectators=" + spectators),
+                false
+        );
+        return 1;
+    }
+
+    private int end(CommandSourceStack source) {
+        WarDayState state = WarDayState.get(source.getServer());
+        if (!state.isActive()) {
+            source.sendFailure(message(ChatFormatting.RED, "War Day is not active."));
+            return 0;
+        }
+
+        int restored = 0;
+        Map<UUID, GameType> snapshots = state.savedGameModes();
+        for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
+            GameType original = snapshots.get(player.getUUID());
+            if (original != null) {
+                player.setGameMode(original);
+                restored++;
+            }
+        }
+
+        state.end();
+        source.getServer().getPlayerList().broadcastSystemMessage(
+                message(ChatFormatting.YELLOW, "War Day ended. Restored gamemodes for " + restored + " online players."),
+                false
+        );
+        return 1;
+    }
+
+    private static void teleportPlayer(ServerPlayer player, ServerLevel level, BlockPos pos) {
+        player.teleportTo(level, pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, Set.of(), player.getYRot(), player.getXRot());
+    }
+
+    private static void setPlayerSpawn(ServerPlayer player, ServerLevel level, BlockPos pos) {
+        player.setRespawnPosition(level.dimension(), pos, player.getYRot(), true, false);
     }
 
     private Optional<ResolvedBases> resolveBases(CommandSourceStack source) {
@@ -266,32 +431,24 @@ public class WarDayCommands {
 
         ScanContext context = scanContext.get();
         TeamValidation teamAValidation = validateTeamMarkers(context.teamA(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
-        TeamValidation teamBValidation = validateTeamMarkers(context.teamB(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
+        Optional<AttackerValidation> attackerValidation = context.teamB().map(team -> validateAttackerSpawn(team, context.attackerSpawns()));
 
-        if (!teamAValidation.passed() || !teamBValidation.passed()) {
+        if (!teamAValidation.passed() || attackerValidation.map(validation -> !validation.passed()).orElse(false)) {
             reportTeamValidation(source, teamAValidation);
-            reportTeamValidation(source, teamBValidation);
-            source.sendFailure(message(ChatFormatting.RED, "Prepare preview requires both teams to pass marker validation."));
+            attackerValidation.ifPresent(validation -> reportAttackerValidation(source, validation));
+            source.sendFailure(message(ChatFormatting.RED, "Prepare requires the defender base and attacker spawn to pass validation."));
             return Optional.empty();
         }
 
         BaseArea teamA = BaseArea.from(teamAValidation, context.chunkManager());
-        BaseArea teamB = BaseArea.from(teamBValidation, context.chunkManager());
-        boolean sameDimension = teamA.dimension().equals(teamB.dimension());
+        Optional<AttackerSpawn> attackerSpawn = attackerValidation.map(AttackerValidation::spawn);
         boolean teamAWithinLimits = reportAndCheckGuardrails(source, teamA);
-        boolean teamBWithinLimits = reportAndCheckGuardrails(source, teamB);
 
-        if (!sameDimension) {
-            source.sendFailure(message(ChatFormatting.RED, "Both source bases must be in the same dimension for the first prepare implementation."));
-            source.sendFailure(message(ChatFormatting.RED,
-                    "Team 1 dimension=" + teamA.dimension().location() + ", Team 2 dimension=" + teamB.dimension().location()));
-        }
-
-        if (!sameDimension || !teamAWithinLimits || !teamBWithinLimits) {
+        if (!teamAWithinLimits) {
             return Optional.empty();
         }
 
-        return Optional.of(new ResolvedBases(teamA, teamB));
+        return Optional.of(new ResolvedBases(teamA, attackerSpawn));
     }
 
     private Optional<ResourceKey<Level>> warDayDimensionKey(CommandSourceStack source) {
@@ -315,21 +472,25 @@ public class WarDayCommands {
         Optional<Team> teamA = findTeamByConfiguredName(teamManager, WarDayConfig.TEAM_A_NAME.get());
         Optional<Team> teamB = findTeamByConfiguredName(teamManager, WarDayConfig.TEAM_B_NAME.get());
 
-        if (teamA.isEmpty() || teamB.isEmpty()) {
-            source.sendFailure(message(ChatFormatting.RED, "Could not find both configured FTB teams."));
+        if (teamA.isEmpty()) {
+            source.sendFailure(message(ChatFormatting.RED, "Could not find configured Team A. Team A is required."));
             source.sendFailure(message(ChatFormatting.RED, "Team A: " + WarDayConfig.TEAM_A_NAME.get() + " found=" + teamA.isPresent()));
-            source.sendFailure(message(ChatFormatting.RED, "Team B: " + WarDayConfig.TEAM_B_NAME.get() + " found=" + teamB.isPresent()));
             return Optional.empty();
+        }
+        if (teamB.isEmpty()) {
+            source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                    "Team B not found; continuing in one-team testing mode. Team B config=" + WarDayConfig.TEAM_B_NAME.get()), false);
         }
 
         List<LocatedBlock> nexuses = new ArrayList<>();
         List<LocatedBlock> forwardMarkers = new ArrayList<>();
+        List<AttackerSpawn> attackerSpawns = new ArrayList<>();
         ServerLevel level = source.getLevel();
         BlockPos center = BlockPos.containing(source.getPosition());
         int radius = WarDayConfig.VALIDATION_RADIUS_BLOCKS.getAsInt();
-        scanArea(level, center, radius, chunkManager, nexuses, forwardMarkers);
+        scanArea(level, center, radius, chunkManager, nexuses, forwardMarkers, attackerSpawns);
 
-        return Optional.of(new ScanContext(level, center, radius, chunkManager, teamA.get(), teamB.get(), nexuses, forwardMarkers));
+        return Optional.of(new ScanContext(level, center, radius, chunkManager, teamA.get(), teamB, nexuses, forwardMarkers, attackerSpawns));
     }
 
     private static Optional<Team> findTeamByConfiguredName(TeamManager teamManager, String configuredName) {
@@ -354,7 +515,8 @@ public class WarDayCommands {
             int radius,
             ClaimedChunkManager chunkManager,
             List<LocatedBlock> nexuses,
-            List<LocatedBlock> forwardMarkers
+            List<LocatedBlock> forwardMarkers,
+            List<AttackerSpawn> attackerSpawns
     ) {
         BlockPos min = new BlockPos(center.getX() - radius, level.getMinBuildHeight(), center.getZ() - radius);
         BlockPos max = new BlockPos(center.getX() + radius, level.getMaxBuildHeight() - 1, center.getZ() + radius);
@@ -370,6 +532,8 @@ public class WarDayCommands {
             } else if (state.is(WarDayMod.FORWARD_MARKER.get())) {
                 String facing = state.getValue(ForwardMarkerBlock.FACING).getName();
                 forwardMarkers.add(new LocatedBlock(level.dimension(), pos.immutable(), facing, getClaimOwner(chunkManager, level, pos)));
+            } else if (state.is(WarDayMod.ATTACKER_SPAWN.get())) {
+                attackerSpawns.add(new AttackerSpawn(level.dimension(), pos.immutable(), getClaimOwner(chunkManager, level, pos)));
             }
         }
     }
@@ -398,6 +562,11 @@ public class WarDayCommands {
 
         boolean passed = teamNexuses.size() == 1 && teamForwardMarkers.size() == 1 && markerInCluster;
         return new TeamValidation(team, teamNexuses, teamForwardMarkers, clusterSize, markerInCluster, passed);
+    }
+
+    private static AttackerValidation validateAttackerSpawn(Team team, List<AttackerSpawn> attackerSpawns) {
+        List<AttackerSpawn> teamSpawns = attackerSpawns.stream().filter(spawn -> spawn.isOwnedBy(team)).toList();
+        return new AttackerValidation(team, teamSpawns, teamSpawns.size() == 1);
     }
 
     private static Set<ChunkDimPos> connectedClaimCluster(Team team, ChunkDimPos start, ClaimedChunkManager chunkManager) {
@@ -456,6 +625,16 @@ public class WarDayCommands {
                         + ", forwardMarkers=" + validation.forwardMarkers().size()
                         + ", nexusClusterChunks=" + validation.clusterSize()
                         + ", markerInNexusCluster=" + validation.markerInCluster()), false);
+    }
+
+    private static void reportAttackerValidation(CommandSourceStack source, AttackerValidation validation) {
+        ChatFormatting color = validation.passed() ? ChatFormatting.GREEN : ChatFormatting.RED;
+        String location = validation.spawns().stream()
+                .findFirst()
+                .map(spawn -> " at " + spawn.dimension().location() + " " + formatPos(spawn.pos()))
+                .orElse("");
+        source.sendSuccess(() -> message(color,
+                validation.team().getName().getString() + ": attackerSpawns=" + validation.spawns().size() + location), false);
     }
 
     private static void reportTeamScan(CommandSourceStack source, TeamValidation validation, ClaimedChunkManager chunkManager) {
@@ -613,6 +792,75 @@ public class WarDayCommands {
         return new CopyResult(blocksCopied, blockEntitiesCopied, containersCleared);
     }
 
+    private static int wipeDestinationArea(ServerLevel targetLevel, PlacementPlan plan) {
+        int wiped = 0;
+        for (int x = plan.targetMinX(); x <= plan.targetMaxX(); x++) {
+            for (int z = plan.targetMinZ(); z <= plan.targetMaxZ(); z++) {
+                for (int y = targetLevel.getMinBuildHeight(); y < targetLevel.getMaxBuildHeight(); y++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    if (!targetLevel.getBlockState(pos).isAir()) {
+                        targetLevel.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                        wiped++;
+                    }
+                }
+            }
+        }
+        return wiped;
+    }
+
+    private static EntityCopyResult copyDecorativeEntities(ServerLevel sourceLevel, ServerLevel targetLevel, PlacementPlan plan) {
+        if (sourceLevel == null) {
+            return new EntityCopyResult(0, 0);
+        }
+
+        int copied = 0;
+        int itemFramesCleared = 0;
+        AABB sourceBounds = plan.sourceEntityBounds(sourceLevel);
+        List<Entity> entities = sourceLevel.getEntities((Entity) null, sourceBounds, WarDayCommands::isAllowedDecorativeEntity);
+
+        for (Entity sourceEntity : entities) {
+            CompoundTag tag = new CompoundTag();
+            if (!sourceEntity.save(tag)) {
+                continue;
+            }
+
+            tag.remove("UUID");
+            tag.put("Pos", newDoubleList(
+                    plan.targetX(sourceEntity.getX()),
+                    sourceEntity.getY(),
+                    plan.targetZ(sourceEntity.getZ())
+            ));
+
+            Optional<Entity> copiedEntity = EntityType.create(tag, targetLevel);
+            if (copiedEntity.isEmpty()) {
+                continue;
+            }
+
+            Entity entity = copiedEntity.get();
+            targetLevel.addFreshEntity(entity);
+            copied++;
+
+            if (entity instanceof ItemFrame itemFrame) {
+                itemFrame.setItem(ItemStack.EMPTY, false);
+                itemFramesCleared++;
+            }
+        }
+
+        return new EntityCopyResult(copied, itemFramesCleared);
+    }
+
+    private static boolean isAllowedDecorativeEntity(Entity entity) {
+        return entity instanceof Painting || entity instanceof ItemFrame;
+    }
+
+    private static ListTag newDoubleList(double x, double y, double z) {
+        ListTag list = new ListTag();
+        list.add(net.minecraft.nbt.DoubleTag.valueOf(x));
+        list.add(net.minecraft.nbt.DoubleTag.valueOf(y));
+        list.add(net.minecraft.nbt.DoubleTag.valueOf(z));
+        return list;
+    }
+
     private static net.minecraft.network.chat.MutableComponent message(ChatFormatting color, String text) {
         return net.minecraft.network.chat.Component.literal(text).withStyle(color);
     }
@@ -635,6 +883,12 @@ public class WarDayCommands {
         }
     }
 
+    private record AttackerSpawn(ResourceKey<Level> dimension, BlockPos pos, Optional<Team> owner) {
+        private boolean isOwnedBy(Team team) {
+            return owner.map(value -> value.getId().equals(team.getId())).orElse(false);
+        }
+    }
+
     private record TeamValidation(
             Team team,
             List<LocatedBlock> nexuses,
@@ -645,15 +899,22 @@ public class WarDayCommands {
     ) {
     }
 
+    private record AttackerValidation(Team team, List<AttackerSpawn> spawns, boolean passed) {
+        private AttackerSpawn spawn() {
+            return spawns.getFirst();
+        }
+    }
+
     private record ScanContext(
             ServerLevel level,
             BlockPos center,
             int radius,
             ClaimedChunkManager chunkManager,
             Team teamA,
-            Team teamB,
+            Optional<Team> teamB,
             List<LocatedBlock> nexuses,
-            List<LocatedBlock> forwardMarkers
+            List<LocatedBlock> forwardMarkers,
+            List<AttackerSpawn> attackerSpawns
     ) {
     }
 
@@ -707,12 +968,16 @@ public class WarDayCommands {
         }
     }
 
-    private record ResolvedBases(BaseArea teamA, BaseArea teamB) {
+    private record ResolvedBases(BaseArea teamA, Optional<AttackerSpawn> attackerSpawn) {
     }
 
     private record PlacementPlan(BaseArea baseArea, BlockPos targetOrigin) {
         private static PlacementPlan from(BaseArea baseArea, BlockPos targetOrigin) {
             return new PlacementPlan(baseArea, targetOrigin);
+        }
+
+        private static PlacementPlan from(BaseArea baseArea) {
+            return new PlacementPlan(baseArea, new BlockPos(baseArea.bounds().minBlockX(), 0, baseArea.bounds().minBlockZ()));
         }
 
         private int targetMinX() {
@@ -748,11 +1013,26 @@ public class WarDayCommands {
         }
 
         private BlockPos targetPos(BlockPos sourcePos, int sourceMinY) {
-            return new BlockPos(
-                    targetOrigin.getX() + sourcePos.getX() - baseArea.bounds().minBlockX(),
-                    targetOrigin.getY() + sourcePos.getY() - sourceMinY,
-                    targetOrigin.getZ() + sourcePos.getZ() - baseArea.bounds().minBlockZ()
+            return sourcePos;
+        }
+
+        private AABB sourceEntityBounds(ServerLevel sourceLevel) {
+            return new AABB(
+                    baseArea.bounds().minBlockX(),
+                    sourceLevel.getMinBuildHeight(),
+                    baseArea.bounds().minBlockZ(),
+                    baseArea.bounds().minBlockX() + baseArea.bounds().blockWidth(),
+                    sourceLevel.getMaxBuildHeight(),
+                    baseArea.bounds().minBlockZ() + baseArea.bounds().blockDepth()
             );
+        }
+
+        private double targetX(double sourceX) {
+            return sourceX;
+        }
+
+        private double targetZ(double sourceZ) {
+            return sourceZ;
         }
     }
 
@@ -760,5 +1040,8 @@ public class WarDayCommands {
     }
 
     private record CopyResult(int blocksCopied, int blockEntitiesCopied, int containersCleared) {
+    }
+
+    private record EntityCopyResult(int entitiesCopied, int itemFramesCleared) {
     }
 }
