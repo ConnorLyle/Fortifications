@@ -1,0 +1,13 @@
+{
+  "itemGroup.fortifications": "Fortifications Mod",
+  "block.fortifications.example_block": "Example Block",
+  "item.fortifications.example_item": "Example Item",
+
+  "fortifications.configuration.title": "Fortifications Mod Configs",
+  "fortifications.configuration.section.fortifications.common.toml": "Fortifications Mod Configs",
+  "fortifications.configuration.section.fortifications.common.toml.title": "Fortifications Mod Configs",
+  "fortifications.configuration.items": "Item List",
+  "fortifications.configuration.logDirtBlock": "Log Dirt Block",
+  "fortifications.configuration.magicNumberIntroduction": "Magic Number Text",
+  "fortifications.configuration.magicNumber": "Magic Number"
+}

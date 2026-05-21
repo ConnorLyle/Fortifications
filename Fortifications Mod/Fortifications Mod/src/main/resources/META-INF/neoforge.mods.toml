@@ -7,20 +7,20 @@ modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
 description='''
-Adds a keybind (default: J) that toggles Equal Break mode.
+Adds a server command that toggles Fortifications mode.
 While active, every block breaks at the same speed as deepslate.
 Unbreakable and instant-break blocks are unaffected.
 '''
 authors="${mod_authors}"
 
-[[dependencies.equalbreak]]
+[[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"
     versionRange="${neoforge_version_range}"
     ordering="NONE"
     side="BOTH"
 
-[[dependencies.equalbreak]]
+[[dependencies.${mod_id}]]
     modId="minecraft"
     type="required"
     versionRange="${minecraft_version_range}"

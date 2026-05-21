@@ -335,7 +335,7 @@
       {
         "type": "puffish_skills:attribute",
         "data": {
-          "attribute": "equalbreak:unarmed_damage",
+          "attribute": "fortifications:unarmed_damage",
           "value": 4,
           "operation": "addition"
         }
