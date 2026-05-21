@@ -18,10 +18,9 @@ public class CommandHandler {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
 
         dispatcher.register(
-            Commands.literal("fortifications")
+            Commands.literal("equalbreak")
                 .requires(src -> src.hasPermission(2)) // OP level 2
-                .then(Commands.literal("all")
-                    .executes(ctx -> toggleAll(ctx.getSource())))
+                .executes(ctx -> toggleAll(ctx.getSource()))
         );
     }
 
