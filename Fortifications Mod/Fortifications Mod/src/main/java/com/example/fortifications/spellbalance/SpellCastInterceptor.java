@@ -31,6 +31,8 @@ public final class SpellCastInterceptor {
 
     @SubscribeEvent
     public static void onSpellPreCast(SpellPreCastEvent event) {
+        RECENT_PLAYER_CAST_LEVELS.put(new CastKey(event.getEntity().getUUID(), event.getSpellId()), event.getSpellLevel());
+
         if (!FortificationsSpellBalance.isBanned(event.getSpellId())) {
             return;
         }
