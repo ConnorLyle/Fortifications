@@ -75,7 +75,7 @@
 		"icon": {
 			"type": "item",
 			"data": {
-				"item": "alshanex_familiars:cleric_trinket"
+				"item": "irons_spellbooks:villager_spell_book"
 			}
 		},
 		"description": "Praise be the Tulip.",
@@ -335,7 +335,7 @@
       {
         "type": "puffish_skills:attribute",
         "data": {
-          "attribute": "puffish_attributes:unarmed_damage",
+          "attribute": "equalbreak:unarmed_damage",
           "value": 4,
           "operation": "addition"
         }
