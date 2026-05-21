@@ -13,9 +13,7 @@ public class BreakSpeedHandler {
 
     @SubscribeEvent
     public static void onBreakSpeed(PlayerEvent.BreakSpeed event) {
-        boolean active = EqualBreakMod.GLOBAL_ACTIVE
-                || EqualBreakMod.TOGGLED_PLAYERS.contains(event.getEntity().getUUID());
-        if (!active) return;
+        if (!EqualBreakMod.GLOBAL_ACTIVE) return;
 
         float hardness = event.getState().getDestroySpeed(event.getEntity().level(), BlockPos.ZERO);
 
@@ -23,10 +21,5 @@ public class BreakSpeedHandler {
 
         float newSpeed = event.getNewSpeed() * (hardness / TARGET_HARDNESS);
         event.setNewSpeed(newSpeed);
-    }
-
-    @SubscribeEvent
-    public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
-        EqualBreakMod.TOGGLED_PLAYERS.remove(event.getEntity().getUUID());
     }
 }
