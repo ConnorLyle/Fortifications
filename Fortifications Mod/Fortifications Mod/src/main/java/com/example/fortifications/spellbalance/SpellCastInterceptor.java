@@ -163,6 +163,15 @@ public final class SpellCastInterceptor {
         }
 
         int spellLevel = RECENT_PLAYER_CAST_LEVELS.getOrDefault(new CastKey(player.getUUID(), spellId), 1);
+        return getBalancedCooldownTicks(spellId, spellLevel);
+    }
+
+    public static int getBalancedCooldownTicks(String spellId, int spellLevel) {
+        double[] cooldownSeconds = SpellBalanceConfig.COOLDOWN_SECONDS_BY_LEVEL.get(spellId);
+        if (cooldownSeconds == null) {
+            return -1;
+        }
+
         return (int) Math.round(doubleForLevel(cooldownSeconds, spellLevel) * 20.0D);
     }
 
