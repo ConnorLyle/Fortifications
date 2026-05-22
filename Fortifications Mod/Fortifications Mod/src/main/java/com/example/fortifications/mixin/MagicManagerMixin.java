@@ -21,7 +21,7 @@ public abstract class MagicManagerMixin {
 
     @Inject(method = "addCooldown", at = @At("HEAD"), cancellable = true, remap = false)
     private void fortifications$addBalancedCooldown(ServerPlayer player, AbstractSpell spell, CastSource castSource, CallbackInfo ci) {
-        int cooldownTicks = SpellCastInterceptor.getBalancedCooldownTicks(player, spell.getSpellId());
+        int cooldownTicks = SpellCastInterceptor.getBalancedEffectiveCooldownTicks(player, spell.getSpellId(), castSource);
         if (cooldownTicks < 0) {
             return;
         }

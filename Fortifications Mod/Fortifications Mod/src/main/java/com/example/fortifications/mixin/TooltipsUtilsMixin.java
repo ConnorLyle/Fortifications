@@ -35,7 +35,7 @@ public abstract class TooltipsUtilsMixin {
 
         SpellData spellData = container.getSpellAtIndex(0);
         int spellLevel = spellData.getSpell().getLevelFor(spellData.getLevel(), player);
-        replaceCooldownLine(cir.getReturnValue(), spellData.getSpell(), spellLevel);
+        replaceCooldownLine(cir.getReturnValue(), spellData.getSpell(), spellLevel, player, CastSource.SCROLL);
     }
 
     @Inject(method = "formatActiveSpellTooltip", at = @At("RETURN"), cancellable = true, remap = false)
@@ -44,14 +44,14 @@ public abstract class TooltipsUtilsMixin {
             SpellData spellData,
             CastSource castSource,
             LocalPlayer player,
-            CallbackInfoReturnable<List<Component>> cir
+        CallbackInfoReturnable<List<Component>> cir
     ) {
         int spellLevel = spellData.getSpell().getLevelFor(spellData.getLevel(), player);
-        replaceCooldownLine(cir.getReturnValue(), spellData.getSpell(), spellLevel);
+        replaceCooldownLine(cir.getReturnValue(), spellData.getSpell(), spellLevel, player, castSource);
     }
 
-    private static void replaceCooldownLine(List<Component> tooltip, AbstractSpell spell, int spellLevel) {
-        int cooldownTicks = SpellCastInterceptor.getBalancedCooldownTicks(spell.getSpellId(), spellLevel);
+    private static void replaceCooldownLine(List<Component> tooltip, AbstractSpell spell, int spellLevel, Player player, CastSource castSource) {
+        int cooldownTicks = SpellCastInterceptor.getBalancedEffectiveCooldownTicks(player, spell.getSpellId(), spellLevel, castSource);
         if (cooldownTicks < 0) {
             return;
         }

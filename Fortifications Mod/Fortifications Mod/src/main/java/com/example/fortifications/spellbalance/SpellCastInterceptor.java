@@ -5,6 +5,10 @@ import io.redspace.ironsspellbooks.api.events.SpellCooldownAddedEvent;
 import io.redspace.ironsspellbooks.api.events.SpellDamageEvent;
 import io.redspace.ironsspellbooks.api.events.SpellOnCastEvent;
 import io.redspace.ironsspellbooks.api.events.SpellPreCastEvent;
+import io.redspace.ironsspellbooks.api.registry.AttributeRegistry;
+import io.redspace.ironsspellbooks.api.spells.CastSource;
+import io.redspace.ironsspellbooks.api.util.Utils;
+import io.redspace.ironsspellbooks.config.ServerConfigs;
 import io.redspace.ironsspellbooks.entity.spells.black_hole.BlackHole;
 import io.redspace.ironsspellbooks.entity.spells.portal.PortalEntity;
 import net.minecraft.ChatFormatting;
@@ -56,7 +60,7 @@ public final class SpellCastInterceptor {
     @SubscribeEvent
     public static void onSpellCooldownAdded(SpellCooldownAddedEvent.Pre event) {
         String spellId = event.getSpell().getSpellId();
-        int cooldownTicks = getBalancedCooldownTicks(event.getEntity(), spellId);
+        int cooldownTicks = getBalancedEffectiveCooldownTicks(event.getEntity(), spellId, event.getCastSource());
         if (cooldownTicks >= 0) {
             event.setEffectiveCooldown(cooldownTicks);
         }
@@ -156,23 +160,38 @@ public final class SpellCastInterceptor {
         return values[Math.max(0, Math.min(values.length - 1, spellLevel - 1))];
     }
 
-    public static int getBalancedCooldownTicks(Player player, String spellId) {
+    public static int getBalancedEffectiveCooldownTicks(Player player, String spellId, CastSource castSource) {
         double[] cooldownSeconds = SpellBalanceConfig.COOLDOWN_SECONDS_BY_LEVEL.get(spellId);
         if (cooldownSeconds == null) {
             return -1;
         }
 
         int spellLevel = RECENT_PLAYER_CAST_LEVELS.getOrDefault(new CastKey(player.getUUID(), spellId), 1);
-        return getBalancedCooldownTicks(spellId, spellLevel);
+        return getBalancedEffectiveCooldownTicks(player, spellId, spellLevel, castSource);
     }
 
-    public static int getBalancedCooldownTicks(String spellId, int spellLevel) {
+    public static int getBalancedBaseCooldownTicks(String spellId, int spellLevel) {
         double[] cooldownSeconds = SpellBalanceConfig.COOLDOWN_SECONDS_BY_LEVEL.get(spellId);
         if (cooldownSeconds == null) {
             return -1;
         }
 
         return (int) Math.round(doubleForLevel(cooldownSeconds, spellLevel) * 20.0D);
+    }
+
+    public static int getBalancedEffectiveCooldownTicks(Player player, String spellId, int spellLevel, CastSource castSource) {
+        int baseCooldownTicks = getBalancedBaseCooldownTicks(spellId, spellLevel);
+        if (baseCooldownTicks < 0) {
+            return -1;
+        }
+
+        double cooldownReduction = player.getAttributeValue(AttributeRegistry.COOLDOWN_REDUCTION);
+        float castSourceMultiplier = 1.0F;
+        if (castSource == CastSource.SWORD) {
+            castSourceMultiplier = ServerConfigs.SWORDS_CD_MULTIPLIER.get().floatValue();
+        }
+
+        return (int) (baseCooldownTicks * (2.0D - Utils.softCapFormula(cooldownReduction)) * castSourceMultiplier);
     }
 
     private static float blackHoleRadiusForVanillaRadius(float vanillaRadius) {
