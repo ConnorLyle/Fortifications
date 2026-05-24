@@ -1,6 +1,7 @@
 package com.example.fortifications.events;
 
 import com.example.fortifications.FortificationsMod;
+import com.example.fortifications.network.FortificationsNetwork;
 import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
@@ -26,6 +27,7 @@ public class CommandHandler {
 
     private static int toggleAll(CommandSourceStack source) {
         FortificationsMod.GLOBAL_ACTIVE = !FortificationsMod.GLOBAL_ACTIVE;
+        FortificationsNetwork.syncToAllPlayers();
 
         Component message = FortificationsMod.GLOBAL_ACTIVE
                 ? Component.literal("[Equalbreak] Enabled for ALL players.").withStyle(ChatFormatting.GREEN)
