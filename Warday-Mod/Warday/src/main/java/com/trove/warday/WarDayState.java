@@ -26,7 +26,7 @@ public class WarDayState extends SavedData {
     private String defenderTeam = "";
     private String attackerTeam = "";
     private boolean active;
-    private final Map<UUID, GameType> savedGameModes = new HashMap<>();
+    private final Map<UUID, PlayerSnapshot> savedPlayers = new HashMap<>();
 
     public static WarDayState get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(
@@ -48,11 +48,22 @@ public class WarDayState extends SavedData {
             state.attackerSpawnPos = BlockPos.of(tag.getLong("AttackerSpawnPos"));
         }
         state.active = tag.getBoolean("Active");
+        ListTag players = tag.getList("SavedPlayers", 10);
+        for (int i = 0; i < players.size(); i++) {
+            CompoundTag playerTag = players.getCompound(i);
+            if (playerTag.hasUUID("Player")) {
+                state.savedPlayers.put(playerTag.getUUID("Player"), PlayerSnapshot.load(playerTag));
+            }
+        }
+
         ListTag modes = tag.getList("SavedGameModes", 10);
         for (int i = 0; i < modes.size(); i++) {
             CompoundTag modeTag = modes.getCompound(i);
             if (modeTag.hasUUID("Player")) {
-                state.savedGameModes.put(modeTag.getUUID("Player"), GameType.byName(modeTag.getString("Mode"), GameType.SURVIVAL));
+                state.savedPlayers.putIfAbsent(
+                        modeTag.getUUID("Player"),
+                        new PlayerSnapshot(GameType.byName(modeTag.getString("Mode"), GameType.SURVIVAL), "", 0.0D, 0.0D, 0.0D, 0.0F, 0.0F)
+                );
             }
         }
         return state;
@@ -71,14 +82,13 @@ public class WarDayState extends SavedData {
             tag.putLong("AttackerSpawnPos", attackerSpawnPos.asLong());
         }
         tag.putBoolean("Active", active);
-        ListTag modes = new ListTag();
-        savedGameModes.forEach((uuid, gameType) -> {
-            CompoundTag modeTag = new CompoundTag();
-            modeTag.putUUID("Player", uuid);
-            modeTag.putString("Mode", gameType.getName());
-            modes.add(modeTag);
+        ListTag players = new ListTag();
+        savedPlayers.forEach((uuid, snapshot) -> {
+            CompoundTag playerTag = snapshot.save();
+            playerTag.putUUID("Player", uuid);
+            players.add(playerTag);
         });
-        tag.put("SavedGameModes", modes);
+        tag.put("SavedPlayers", players);
         return tag;
     }
 
@@ -92,20 +102,20 @@ public class WarDayState extends SavedData {
         setDirty();
     }
 
-    public void start(Map<UUID, GameType> gameModes) {
+    public void start(Map<UUID, PlayerSnapshot> players) {
         active = true;
-        savedGameModes.clear();
-        savedGameModes.putAll(gameModes);
+        savedPlayers.clear();
+        savedPlayers.putAll(players);
         setDirty();
     }
 
-    public Map<UUID, GameType> savedGameModes() {
-        return Map.copyOf(savedGameModes);
+    public Map<UUID, PlayerSnapshot> savedPlayers() {
+        return Map.copyOf(savedPlayers);
     }
 
     public void end() {
         active = false;
-        savedGameModes.clear();
+        savedPlayers.clear();
         setDirty();
     }
 
@@ -143,6 +153,32 @@ public class WarDayState extends SavedData {
             return server.getLevel(key) != null;
         } catch (Exception ignored) {
             return false;
+        }
+    }
+
+    public record PlayerSnapshot(GameType gameMode, String dimension, double x, double y, double z, float yRot, float xRot) {
+        private static PlayerSnapshot load(CompoundTag tag) {
+            return new PlayerSnapshot(
+                    GameType.byName(tag.getString("Mode"), GameType.SURVIVAL),
+                    tag.getString("Dimension"),
+                    tag.getDouble("X"),
+                    tag.getDouble("Y"),
+                    tag.getDouble("Z"),
+                    tag.getFloat("YRot"),
+                    tag.getFloat("XRot")
+            );
+        }
+
+        private CompoundTag save() {
+            CompoundTag tag = new CompoundTag();
+            tag.putString("Mode", gameMode.getName());
+            tag.putString("Dimension", dimension);
+            tag.putDouble("X", x);
+            tag.putDouble("Y", y);
+            tag.putDouble("Z", z);
+            tag.putFloat("YRot", yRot);
+            tag.putFloat("XRot", xRot);
+            return tag;
         }
     }
 }

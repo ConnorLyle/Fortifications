@@ -32,6 +32,7 @@ public final class FortificationsSpellBalance {
     public static final String IRON_VOLT_STRIKE = "irons_spellbooks:volt_strike";
     public static final String IRON_BURNING_DASH = "irons_spellbooks:burning_dash";
     public static final String IRON_BLACK_HOLE = "irons_spellbooks:black_hole";
+    public static final String IRON_SHIELD = "irons_spellbooks:shield";
 
     public static final String GEOMANCY_PETRIVISE = "gtbcs_geomancy_plus:petrivise";
     public static final String GTBC_NULLFLARE = "gametechbcs_spellbooks:nullflare";

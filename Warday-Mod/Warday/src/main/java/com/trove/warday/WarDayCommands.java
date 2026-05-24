@@ -22,6 +22,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
@@ -39,6 +40,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
 
 import java.util.ArrayList;
 import java.util.ArrayDeque;
@@ -247,9 +249,15 @@ public class WarDayCommands {
         }
 
         ResolvedBases bases = resolved.get();
+        ServerLevel sourceLevel = source.getServer().getLevel(bases.teamA().dimension());
+        if (sourceLevel == null) {
+            source.sendFailure(message(ChatFormatting.RED, "Defender source dimension is not loaded: " + bases.teamA().dimension().location()));
+            return 0;
+        }
+
         PlacementPlan teamAPlan = PlacementPlan.from(bases.teamA());
 
-        CopyCheck teamACheck = checkDestinationEmpty(source.getServer().getLevel(bases.teamA().dimension()), targetLevel, teamAPlan);
+        CopyCheck teamACheck = checkDestinationEmpty(sourceLevel, targetLevel, teamAPlan);
         reportCopyCheck(source, bases.teamA().team().getName().getString(), teamACheck);
 
         if (!teamACheck.passed()) {
@@ -259,8 +267,8 @@ public class WarDayCommands {
         int teamAWiped = wipeDestinationArea(targetLevel, teamAPlan);
         source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Wiped " + teamAWiped + " destination blocks from War Day target area."), true);
 
-        CopyResult teamAResult = copyBase(source.getServer().getLevel(bases.teamA().dimension()), targetLevel, teamAPlan);
-        EntityCopyResult teamAEntityResult = copyDecorativeEntities(source.getServer().getLevel(bases.teamA().dimension()), targetLevel, teamAPlan);
+        CopyResult teamAResult = copyBase(sourceLevel, targetLevel, teamAPlan);
+        EntityCopyResult teamAEntityResult = copyDecorativeEntities(sourceLevel, targetLevel, teamAPlan);
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
                 "Copied " + bases.teamA().team().getName().getString() + ": " + teamAResult.blocksCopied()
                         + " blocks, " + teamAResult.blockEntitiesCopied() + " block entities, "
@@ -268,14 +276,15 @@ public class WarDayCommands {
                         + teamAEntityResult.entitiesCopied() + " decorative entities, "
                         + teamAEntityResult.itemFramesCleared() + " item frames cleared."), true);
         bases.attackerSpawn().ifPresent(spawn -> source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Attacker spawn recorded from " + spawn.dimension().location() + " " + formatPos(spawn.pos())), true));
+                "Attacker spawn translated from " + spawn.dimension().location() + " " + formatPos(spawn.pos())
+                        + " to " + formatPos(teamAPlan.targetPos(spawn.pos()))), true));
         WarDayState state = WarDayState.get(source.getServer());
         state.markPrepared(
                 WarDayConfig.WAR_DAY_DIMENSION.get(),
                 bases.teamA().team().getName().getString(),
                 bases.attackerSpawn().isPresent() ? WarDayConfig.TEAM_B_NAME.get() : "",
-                teamAPlan.targetPos(bases.teamA().nexus().pos(), source.getServer().getLevel(bases.teamA().dimension()).getMinBuildHeight()),
-                bases.attackerSpawn().map(AttackerSpawn::pos).orElse(null)
+                teamAPlan.targetPos(bases.teamA().nexus().pos()),
+                bases.attackerSpawn().map(spawn -> teamAPlan.targetPos(spawn.pos())).orElse(null)
         );
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
                 "Copied bases are not rotated yet. Nexus win tracking will be added in a later pass."), false);
@@ -305,7 +314,7 @@ public class WarDayCommands {
                     "Copied nexus: " + state.copiedNexusPos().map(WarDayCommands::formatPos).orElse("missing")), false);
             source.sendSuccess(() -> message(ChatFormatting.GRAY,
                     "Attacker spawn: " + state.attackerSpawnPos().map(WarDayCommands::formatPos).orElse("missing")), false);
-            source.sendSuccess(() -> message(ChatFormatting.GREEN, "Next command: /warday start once start flow is implemented."), false);
+            source.sendSuccess(() -> message(ChatFormatting.GREEN, "Next command: /warday start"), false);
         } else {
             source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Next command: /warday prepare confirm"), false);
         }
@@ -354,7 +363,7 @@ public class WarDayCommands {
             return 0;
         }
 
-        Map<UUID, GameType> snapshots = new HashMap<>();
+        Map<UUID, WarDayState.PlayerSnapshot> snapshots = new HashMap<>();
         int defenders = 0;
         int attackers = 0;
         int spectators = 0;
@@ -363,7 +372,7 @@ public class WarDayCommands {
 
         for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
             UUID id = player.getUUID();
-            snapshots.put(id, player.gameMode.getGameModeForPlayer());
+            snapshots.put(id, snapshotPlayer(player));
 
             if (defenderIds.contains(id)) {
                 teleportPlayer(player, warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0));
@@ -397,22 +406,75 @@ public class WarDayCommands {
             return 0;
         }
 
-        int restored = 0;
-        Map<UUID, GameType> snapshots = state.savedGameModes();
-        for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
-            GameType original = snapshots.get(player.getUUID());
-            if (original != null) {
-                player.setGameMode(original);
-                restored++;
-            }
-        }
-
-        state.end();
+        int restored = endActiveWarDay(source.getServer(), state);
         source.getServer().getPlayerList().broadcastSystemMessage(
                 message(ChatFormatting.YELLOW, "War Day ended. Restored gamemodes for " + restored + " online players."),
                 false
         );
         return 1;
+    }
+
+    @SubscribeEvent
+    public void onBlockBreak(BlockEvent.BreakEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel level) || !event.getState().is(WarDayMod.NEXUS.get())) {
+            return;
+        }
+
+        WarDayState state = WarDayState.get(level.getServer());
+        if (!state.isActive() || state.copiedNexusPos().isEmpty()) {
+            return;
+        }
+
+        if (!level.dimension().location().toString().equals(state.warDayDimension()) || !event.getPos().equals(state.copiedNexusPos().get())) {
+            return;
+        }
+
+        int restored = endActiveWarDay(level.getServer(), state);
+        String breaker = event.getPlayer().getName().getString();
+        String attackerTeam = state.attackerTeam().isBlank() ? WarDayConfig.TEAM_B_NAME.get() : state.attackerTeam();
+        level.getServer().getPlayerList().broadcastSystemMessage(
+                message(ChatFormatting.GOLD,
+                        "War Day complete: " + attackerTeam + " destroyed the nexus. Final break by " + breaker
+                                + ". Restored gamemodes for " + restored + " online players."),
+                false
+        );
+    }
+
+    private static int endActiveWarDay(MinecraftServer server, WarDayState state) {
+        int restored = 0;
+        Map<UUID, WarDayState.PlayerSnapshot> snapshots = state.savedPlayers();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            WarDayState.PlayerSnapshot snapshot = snapshots.get(player.getUUID());
+            if (snapshot != null) {
+                restorePlayer(server, player, snapshot);
+                restored++;
+            }
+        }
+
+        state.end();
+        return restored;
+    }
+
+    private static WarDayState.PlayerSnapshot snapshotPlayer(ServerPlayer player) {
+        return new WarDayState.PlayerSnapshot(
+                player.gameMode.getGameModeForPlayer(),
+                player.level().dimension().location().toString(),
+                player.getX(),
+                player.getY(),
+                player.getZ(),
+                player.getYRot(),
+                player.getXRot()
+        );
+    }
+
+    private static void restorePlayer(MinecraftServer server, ServerPlayer player, WarDayState.PlayerSnapshot snapshot) {
+        if (!snapshot.dimension().isBlank()) {
+            ServerLevel restoreLevel = server.getLevel(ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(snapshot.dimension())));
+            if (restoreLevel != null) {
+                player.teleportTo(restoreLevel, snapshot.x(), snapshot.y(), snapshot.z(), Set.of(), snapshot.yRot(), snapshot.xRot());
+            }
+        }
+        player.setGameMode(snapshot.gameMode());
     }
 
     private static void teleportPlayer(ServerPlayer player, ServerLevel level, BlockPos pos) {
@@ -696,7 +758,7 @@ public class WarDayCommands {
                         + " chunks [" + plan.baseArea().bounds().minX() + ", " + plan.baseArea().bounds().minZ() + "] to ["
                         + plan.baseArea().bounds().maxX() + ", " + plan.baseArea().bounds().maxZ() + "]"), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
-                "- target origin: " + formatPos(plan.targetOrigin())), false);
+                "- target copied nexus: " + formatPos(plan.targetNexusPos())), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "- target footprint: [" + plan.targetMinX() + ", " + plan.targetMinZ() + "] to ["
                         + plan.targetMaxX() + ", " + plan.targetMaxZ() + "]"), false);
@@ -726,7 +788,10 @@ public class WarDayCommands {
                         }
 
                         checked++;
-                        BlockPos targetPos = plan.targetPos(sourcePos, sourceLevel.getMinBuildHeight());
+                        BlockPos targetPos = plan.targetPos(sourcePos);
+                        if (targetPos.getY() < targetLevel.getMinBuildHeight() || targetPos.getY() >= targetLevel.getMaxBuildHeight()) {
+                            continue;
+                        }
                         if (!targetLevel.getBlockState(targetPos).isAir()) {
                             return new CopyCheck(false, checked, 1, targetPos);
                         }
@@ -763,7 +828,10 @@ public class WarDayCommands {
                             continue;
                         }
 
-                        BlockPos targetPos = plan.targetPos(sourcePos, sourceLevel.getMinBuildHeight());
+                        BlockPos targetPos = plan.targetPos(sourcePos);
+                        if (targetPos.getY() < targetLevel.getMinBuildHeight() || targetPos.getY() >= targetLevel.getMaxBuildHeight()) {
+                            continue;
+                        }
                         targetLevel.setBlock(targetPos, sourceState, 3);
                         blocksCopied++;
 
@@ -827,9 +895,10 @@ public class WarDayCommands {
             tag.remove("UUID");
             tag.put("Pos", newDoubleList(
                     plan.targetX(sourceEntity.getX()),
-                    sourceEntity.getY(),
+                    plan.targetY(sourceEntity.getY()),
                     plan.targetZ(sourceEntity.getZ())
             ));
+            translateHangingEntityTile(tag, plan);
 
             Optional<Entity> copiedEntity = EntityType.create(tag, targetLevel);
             if (copiedEntity.isEmpty()) {
@@ -851,6 +920,18 @@ public class WarDayCommands {
 
     private static boolean isAllowedDecorativeEntity(Entity entity) {
         return entity instanceof Painting || entity instanceof ItemFrame;
+    }
+
+    private static void translateHangingEntityTile(CompoundTag tag, PlacementPlan plan) {
+        if (tag.contains("TileX")) {
+            tag.putInt("TileX", plan.targetBlockX(tag.getInt("TileX")));
+        }
+        if (tag.contains("TileY")) {
+            tag.putInt("TileY", plan.targetBlockY(tag.getInt("TileY")));
+        }
+        if (tag.contains("TileZ")) {
+            tag.putInt("TileZ", plan.targetBlockZ(tag.getInt("TileZ")));
+        }
     }
 
     private static ListTag newDoubleList(double x, double y, double z) {
@@ -971,29 +1052,29 @@ public class WarDayCommands {
     private record ResolvedBases(BaseArea teamA, Optional<AttackerSpawn> attackerSpawn) {
     }
 
-    private record PlacementPlan(BaseArea baseArea, BlockPos targetOrigin) {
-        private static PlacementPlan from(BaseArea baseArea, BlockPos targetOrigin) {
-            return new PlacementPlan(baseArea, targetOrigin);
+    private record PlacementPlan(BaseArea baseArea, BlockPos targetNexusPos) {
+        private static PlacementPlan from(BaseArea baseArea, BlockPos targetNexusPos) {
+            return new PlacementPlan(baseArea, targetNexusPos);
         }
 
         private static PlacementPlan from(BaseArea baseArea) {
-            return new PlacementPlan(baseArea, new BlockPos(baseArea.bounds().minBlockX(), 0, baseArea.bounds().minBlockZ()));
+            return new PlacementPlan(baseArea, new BlockPos(0, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0));
         }
 
         private int targetMinX() {
-            return targetOrigin.getX();
+            return targetNexusPos.getX() - nexusOffset().getX();
         }
 
         private int targetMinZ() {
-            return targetOrigin.getZ();
+            return targetNexusPos.getZ() - nexusOffset().getZ();
         }
 
         private int targetMaxX() {
-            return targetOrigin.getX() + baseArea.bounds().blockWidth() - 1;
+            return targetMinX() + baseArea.bounds().blockWidth() - 1;
         }
 
         private int targetMaxZ() {
-            return targetOrigin.getZ() + baseArea.bounds().blockDepth() - 1;
+            return targetMinZ() + baseArea.bounds().blockDepth() - 1;
         }
 
         private BlockPos nexusOffset() {
@@ -1012,8 +1093,12 @@ public class WarDayCommands {
             );
         }
 
-        private BlockPos targetPos(BlockPos sourcePos, int sourceMinY) {
-            return sourcePos;
+        private BlockPos targetPos(BlockPos sourcePos) {
+            return new BlockPos(
+                    targetBlockX(sourcePos.getX()),
+                    targetBlockY(sourcePos.getY()),
+                    targetBlockZ(sourcePos.getZ())
+            );
         }
 
         private AABB sourceEntityBounds(ServerLevel sourceLevel) {
@@ -1028,11 +1113,27 @@ public class WarDayCommands {
         }
 
         private double targetX(double sourceX) {
-            return sourceX;
+            return sourceX + targetNexusPos.getX() - baseArea.nexus().pos().getX();
+        }
+
+        private double targetY(double sourceY) {
+            return sourceY + targetNexusPos.getY() - baseArea.nexus().pos().getY();
         }
 
         private double targetZ(double sourceZ) {
-            return sourceZ;
+            return sourceZ + targetNexusPos.getZ() - baseArea.nexus().pos().getZ();
+        }
+
+        private int targetBlockX(int sourceX) {
+            return sourceX + targetNexusPos.getX() - baseArea.nexus().pos().getX();
+        }
+
+        private int targetBlockY(int sourceY) {
+            return sourceY + targetNexusPos.getY() - baseArea.nexus().pos().getY();
+        }
+
+        private int targetBlockZ(int sourceZ) {
+            return sourceZ + targetNexusPos.getZ() - baseArea.nexus().pos().getZ();
         }
     }
 

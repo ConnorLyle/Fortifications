@@ -30,6 +30,7 @@ public final class SpellBalanceConfig {
             Map.entry(FortificationsSpellBalance.IRON_LIGHTNING_BOLT, new double[] {20, 18, 16, 15, 14, 12, 10, 8, 6, 5}),
             Map.entry(FortificationsSpellBalance.IRON_VOLT_STRIKE, new double[] {6, 6, 6, 6, 6, 6, 6, 6, 6, 6}),
             Map.entry(FortificationsSpellBalance.IRON_BURNING_DASH, new double[] {6, 6, 6, 6, 6, 6, 6, 6, 6, 6}),
+            Map.entry(FortificationsSpellBalance.IRON_SHIELD, new double[] {30, 30, 30, 30, 30, 30, 30, 30, 30, 30}),
             // Petrivise: double cooldown from 30s to 60s.
             Map.entry(FortificationsSpellBalance.GEOMANCY_PETRIVISE, new double[] {60, 60, 60}),
             Map.entry(FortificationsSpellBalance.GTBC_FLAMES_REBORN, new double[] {180, 180, 180})
