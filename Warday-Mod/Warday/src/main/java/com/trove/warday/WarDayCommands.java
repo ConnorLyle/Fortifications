@@ -248,7 +248,7 @@ public class WarDayCommands {
         source.sendSuccess(() -> message(ChatFormatting.GRAY, "Defender nexus targets [0, warDayBaseY, 0]; attacker spawn targets [baseSpacingBlocks, warDayBaseY, 0]."), false);
 
         reportPlacementPlan(source, PlacementPlan.from(bases.teamA()));
-        bases.attackerSpawn().ifPresent(spawn -> reportPlacementPlan(source, PlacementPlan.from(spawn)));
+        bases.attackerArea().ifPresent(area -> reportPlacementPlan(source, PlacementPlan.from(area)));
 
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
                 "Run /warday prepare confirm to copy these source chunks into the target placements."), false);
@@ -274,23 +274,32 @@ public class WarDayCommands {
         }
 
         ResolvedBases bases = resolved.get();
-        ServerLevel sourceLevel = source.getServer().getLevel(bases.teamA().dimension());
-        if (sourceLevel == null) {
+        ServerLevel defenderSourceLevel = source.getServer().getLevel(bases.teamA().dimension());
+        if (defenderSourceLevel == null) {
             source.sendFailure(message(ChatFormatting.RED, "Defender source dimension is not loaded: " + bases.teamA().dimension().location()));
             return 0;
         }
 
         PlacementPlan teamAPlan = PlacementPlan.from(bases.teamA());
-        Optional<PlacementPlan> attackerPlan = bases.attackerSpawn().map(PlacementPlan::from);
-
-        CopyCheck teamACheck = checkDestinationEmpty(sourceLevel, targetLevel, teamAPlan);
-        reportCopyCheck(source, bases.teamA().team().getName().getString(), teamACheck);
+        Optional<PlacementPlan> attackerPlan = bases.attackerArea().map(PlacementPlan::from);
+        ServerLevel attackerSourceLevel = null;
         if (attackerPlan.isPresent()) {
-            CopyCheck attackerCheck = checkDestinationEmpty(sourceLevel, targetLevel, attackerPlan.get());
-            reportCopyCheck(source, WarDayConfig.TEAM_B_NAME.get() + " spawn chunk", attackerCheck);
+            attackerSourceLevel = source.getServer().getLevel(attackerPlan.get().dimension());
+            if (attackerSourceLevel == null) {
+                source.sendFailure(message(ChatFormatting.RED, "Attacker source dimension is not loaded: " + attackerPlan.get().dimension().location()));
+                return 0;
+            }
         }
 
-        if (!teamACheck.passed() || attackerPlan.map(plan -> !checkDestinationEmpty(sourceLevel, targetLevel, plan).passed()).orElse(false)) {
+        CopyCheck teamACheck = checkDestinationEmpty(defenderSourceLevel, targetLevel, teamAPlan);
+        reportCopyCheck(source, bases.teamA().team().getName().getString(), teamACheck);
+        CopyCheck attackerCheck = null;
+        if (attackerPlan.isPresent()) {
+            attackerCheck = checkDestinationEmpty(attackerSourceLevel, targetLevel, attackerPlan.get());
+            reportCopyCheck(source, WarDayConfig.TEAM_B_NAME.get() + " spawn area", attackerCheck);
+        }
+
+        if (!teamACheck.passed() || (attackerCheck != null && !attackerCheck.passed())) {
             source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Destination conflicts found; wiping computed War Day destination areas before paste."), true);
         }
 
@@ -301,30 +310,31 @@ public class WarDayCommands {
             source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Wiped " + attackerWiped + " attacker destination blocks from War Day target area."), true);
         });
 
-        CopyResult teamAResult = copyBase(sourceLevel, targetLevel, teamAPlan);
-        EntityCopyResult teamAEntityResult = copyDecorativeEntities(sourceLevel, targetLevel, teamAPlan);
+        CopyResult teamAResult = copyBase(defenderSourceLevel, targetLevel, teamAPlan);
+        EntityCopyResult teamAEntityResult = copyDecorativeEntities(defenderSourceLevel, targetLevel, teamAPlan);
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
                 "Copied " + bases.teamA().team().getName().getString() + ": " + teamAResult.blocksCopied()
                         + " blocks, " + teamAResult.blockEntitiesCopied() + " block entities, "
                         + teamAResult.containersCleared() + " containers cleared, "
                         + teamAEntityResult.entitiesCopied() + " decorative entities, "
                         + teamAEntityResult.itemFramesCleared() + " item frames cleared."), true);
-        attackerPlan.ifPresent(plan -> {
-            CopyResult attackerResult = copyBase(sourceLevel, targetLevel, plan);
-            EntityCopyResult attackerEntityResult = copyDecorativeEntities(sourceLevel, targetLevel, plan);
+        if (attackerPlan.isPresent()) {
+            PlacementPlan plan = attackerPlan.get();
+            CopyResult attackerResult = copyBase(attackerSourceLevel, targetLevel, plan);
+            EntityCopyResult attackerEntityResult = copyDecorativeEntities(attackerSourceLevel, targetLevel, plan);
             source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                    "Copied attacker spawn chunk: " + attackerResult.blocksCopied()
+                    "Copied attacker spawn area: " + attackerResult.blocksCopied()
                             + " blocks, " + attackerResult.blockEntitiesCopied() + " block entities, "
                             + attackerResult.containersCleared() + " containers cleared, "
                             + attackerEntityResult.entitiesCopied() + " decorative entities, "
                             + attackerEntityResult.itemFramesCleared() + " item frames cleared. Spawn at "
                             + formatPos(plan.targetAnchorPos())), true);
-        });
+        }
         WarDayState state = WarDayState.get(source.getServer());
         state.markPrepared(
                 WarDayConfig.WAR_DAY_DIMENSION.get(),
                 bases.teamA().team().getName().getString(),
-                bases.attackerSpawn().isPresent() ? WarDayConfig.TEAM_B_NAME.get() : "",
+                bases.attackerArea().isPresent() ? WarDayConfig.TEAM_B_NAME.get() : "",
                 teamAPlan.targetPos(bases.teamA().nexus().pos()),
                 attackerPlan.map(PlacementPlan::targetAnchorPos).orElse(null)
         );
@@ -583,14 +593,14 @@ public class WarDayCommands {
         }
 
         BaseArea teamA = BaseArea.from(teamAValidation, context.chunkManager());
-        Optional<AttackerSpawn> attackerSpawn = attackerValidation.map(AttackerValidation::spawn);
+        Optional<AttackerArea> attackerArea = attackerValidation.map(validation -> AttackerArea.from(validation, context.chunkManager()));
         boolean teamAWithinLimits = reportAndCheckGuardrails(source, teamA);
 
         if (!teamAWithinLimits) {
             return Optional.empty();
         }
 
-        return Optional.of(new ResolvedBases(teamA, attackerSpawn));
+        return Optional.of(new ResolvedBases(teamA, attackerArea));
     }
 
     private Optional<ResourceKey<Level>> warDayDimensionKey(CommandSourceStack source) {
@@ -1048,6 +1058,10 @@ public class WarDayCommands {
         private boolean isOwnedBy(Team team) {
             return owner.map(value -> value.getId().equals(team.getId())).orElse(false);
         }
+
+        private ChunkDimPos chunkDimPos() {
+            return new ChunkDimPos(dimension, new ChunkPos(pos));
+        }
     }
 
     private record TeamValidation(
@@ -1129,7 +1143,21 @@ public class WarDayCommands {
         }
     }
 
-    private record ResolvedBases(BaseArea teamA, Optional<AttackerSpawn> attackerSpawn) {
+    private record AttackerArea(
+            Team team,
+            AttackerSpawn spawn,
+            Set<ChunkDimPos> cluster,
+            ClusterBounds bounds,
+            ResourceKey<Level> dimension
+    ) {
+        private static AttackerArea from(AttackerValidation validation, ClaimedChunkManager chunkManager) {
+            AttackerSpawn spawn = validation.spawn();
+            Set<ChunkDimPos> cluster = connectedClaimCluster(validation.team(), spawn.chunkDimPos(), chunkManager);
+            return new AttackerArea(validation.team(), spawn, cluster, ClusterBounds.from(cluster), spawn.dimension());
+        }
+    }
+
+    private record ResolvedBases(BaseArea teamA, Optional<AttackerArea> attackerArea) {
     }
 
     private record PlacementPlan(
@@ -1157,15 +1185,13 @@ public class WarDayCommands {
             return from(baseArea, new BlockPos(0, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0));
         }
 
-        private static PlacementPlan from(AttackerSpawn spawn) {
-            ChunkDimPos spawnChunk = new ChunkDimPos(spawn.dimension(), new ChunkPos(spawn.pos()));
-            Set<ChunkDimPos> cluster = Set.of(spawnChunk);
+        private static PlacementPlan from(AttackerArea area) {
             return new PlacementPlan(
-                    WarDayConfig.TEAM_B_NAME.get() + " spawn chunk",
-                    spawn.dimension(),
-                    spawn.pos(),
-                    cluster,
-                    ClusterBounds.from(cluster),
+                    area.team().getName().getString() + " spawn area",
+                    area.dimension(),
+                    area.spawn().pos(),
+                    area.cluster(),
+                    area.bounds(),
                     new BlockPos(WarDayConfig.BASE_SPACING_BLOCKS.getAsInt(), WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0),
                     Optional.empty()
             );
