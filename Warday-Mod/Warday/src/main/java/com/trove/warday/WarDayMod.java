@@ -62,8 +62,7 @@ public class WarDayMod {
     private static BlockBehaviour.Properties warDayBlockProperties() {
         return BlockBehaviour.Properties.of()
                 .mapColor(MapColor.COLOR_CYAN)
-                .strength(50.0F, 1200.0F)
-                .requiresCorrectToolForDrops()
+                .strength(3.0F, 30.0F)
                 .sound(SoundType.GLASS);
     }
 
