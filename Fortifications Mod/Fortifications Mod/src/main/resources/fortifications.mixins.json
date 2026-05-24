@@ -4,6 +4,8 @@
   "package": "com.example.fortifications.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BlockMixin",
+    "BlockStateBaseMixin",
     "FrostStepSpellMixin",
     "HuntingBeltItemMixin",
     "MagicManagerMixin",
