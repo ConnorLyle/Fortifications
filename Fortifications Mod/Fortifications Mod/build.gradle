@@ -43,6 +43,7 @@ dependencies {
     compileOnly files('../../mods/gametechbcs_spellbooks-3.0.0-1.21.1.jar')
     compileOnly files('../../mods/gtbcs_geomancy_plus-1.1.0-1.21.1.jar')
     compileOnly files('../../mods/tunes_n_tomes-1.0.1.jar')
+    compileOnly files('../../mods/relics-1.21.1-0.11.15.jar')
 }
 
 // Inject gradle.properties values into neoforge.mods.toml at build time
