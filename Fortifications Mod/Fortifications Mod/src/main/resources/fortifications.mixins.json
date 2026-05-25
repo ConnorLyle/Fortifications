@@ -8,10 +8,18 @@
     "BlockStateBaseMixin",
     "FrostStepSpellMixin",
     "HuntingBeltItemMixin",
+    "KineticBeltItemMixin",
     "MagicManagerMixin",
     "PetriviseSpellMixin",
     "PortalSpellMixin",
-    "TooltipsUtilsMixin"
+    "PowerGloveCommonEventsMixin",
+    "PowerGloveItemMixin",
+    "RunningShoesItemMixin",
+    "SpringyBootItemMixin",
+    "SteadfastSpikesEventsMixin",
+    "SteadfastSpikesItemMixin",
+    "TooltipsUtilsMixin",
+    "VampiricGloveItemMixin"
   ],
   "injectors": {
     "defaultRequire": 1
