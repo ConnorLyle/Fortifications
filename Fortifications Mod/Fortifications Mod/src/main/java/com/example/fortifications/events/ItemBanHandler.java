@@ -7,12 +7,17 @@ import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.util.TriState;
+import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
 import top.theillusivec4.curios.api.CuriosApi;
 
@@ -28,11 +33,33 @@ public final class ItemBanHandler {
 
         if (event.getEntity() instanceof ItemEntity itemEntity) {
             removeBannedItemEntity(itemEntity);
-            return;
         }
+    }
 
-        if (event.getEntity() instanceof ServerPlayer player && player.tickCount % 20 == 0) {
+    @SubscribeEvent
+    public static void onPlayerTick(PlayerTickEvent.Pre event) {
+        if (event.getEntity() instanceof ServerPlayer player && player.tickCount % 5 == 0) {
             removeBannedPlayerItems(player);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onItemPickup(ItemEntityPickupEvent.Pre event) {
+        if (isBanned(event.getItemEntity().getItem())) {
+            event.setCanPickup(TriState.FALSE);
+            event.getItemEntity().discard();
+        }
+    }
+
+    @SubscribeEvent
+    public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
+        if (isBanned(event.getItemStack())) {
+            event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.FAIL);
+
+            if (event.getEntity() instanceof ServerPlayer player) {
+                removeBannedPlayerItems(player);
+            }
         }
     }
 
@@ -52,6 +79,9 @@ public final class ItemBanHandler {
         removed |= removeBannedCurios(player);
 
         if (removed) {
+            inventory.setChanged();
+            player.inventoryMenu.broadcastChanges();
+            player.containerMenu.broadcastChanges();
             player.displayClientMessage(
                     Component.literal("A banned item was removed from your inventory.").withStyle(ChatFormatting.RED),
                     true

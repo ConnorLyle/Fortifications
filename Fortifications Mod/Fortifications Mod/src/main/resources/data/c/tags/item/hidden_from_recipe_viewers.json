@@ -1,0 +1,105 @@
+{
+  "replace": false,
+  "values": [
+    {
+      "id": "alexscaves:candy_cane_hook",
+      "required": false
+    },
+    {
+      "id": "alexscaves:cloak_of_darkness",
+      "required": false
+    },
+    {
+      "id": "alexscaves:hood_of_darkness",
+      "required": false
+    },
+    {
+      "id": "alexscaves:raygun",
+      "required": false
+    },
+    {
+      "id": "alexscaves:resistor_shield",
+      "required": false
+    },
+    {
+      "id": "artifacts:bunny_hoppers",
+      "required": false
+    },
+    {
+      "id": "artifacts:charm_of_shrinking",
+      "required": false
+    },
+    {
+      "id": "artifacts:helium_flamingo",
+      "required": false
+    },
+    {
+      "id": "artifacts:pocket_piston",
+      "required": false
+    },
+    {
+      "id": "artifacts:warp_drive",
+      "required": false
+    },
+    {
+      "id": "relics:chorus_staff",
+      "required": false
+    },
+    {
+      "id": "relics:clot_of_time",
+      "required": false
+    },
+    {
+      "id": "relics:experience_disperser",
+      "required": false
+    },
+    {
+      "id": "relics:leafy_mantle",
+      "required": false
+    },
+    {
+      "id": "reliquified_irons_spells_and_spellbooks:dimension_key",
+      "required": false
+    },
+    {
+      "id": "reliquified_irons_spells_and_spellbooks:mirror_of_transgression",
+      "required": false
+    },
+    {
+      "id": "reliquified_irons_spells_and_spellbooks:ring_of_blades",
+      "required": false
+    },
+    {
+      "id": "simplyswords:awakened_lichblade",
+      "required": false
+    },
+    {
+      "id": "simplyswords:chompolotl",
+      "required": false
+    },
+    {
+      "id": "simplyswords:decaying_relic",
+      "required": false
+    },
+    {
+      "id": "simplyswords:slumbering_lichblade",
+      "required": false
+    },
+    {
+      "id": "simplyswords:sword_on_a_stick",
+      "required": false
+    },
+    {
+      "id": "simplyswords:waking_lichblade",
+      "required": false
+    },
+    {
+      "id": "sophisticatedbackpacks:advanced_feeding_upgrade",
+      "required": false
+    },
+    {
+      "id": "sophisticatedbackpacks:feeding_upgrade",
+      "required": false
+    }
+  ]
+}
