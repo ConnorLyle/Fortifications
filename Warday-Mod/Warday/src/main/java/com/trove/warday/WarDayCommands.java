@@ -43,12 +43,14 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -61,6 +63,7 @@ public class WarDayCommands {
     private static final int VALIDATE_PERMISSION_LEVEL = 2;
     private static final int MATCH_BLOCK_TARGET_COUNT = 32;
     private static final SuggestionProvider<CommandSourceStack> TEAM_NAME_SUGGESTIONS = WarDayCommands::suggestTeamNames;
+    private static final Map<UUID, PendingRespawn> PENDING_RESPAWNS = new HashMap<>();
 
     @SubscribeEvent
     public void registerCommands(RegisterCommandsEvent event) {
@@ -318,17 +321,26 @@ public class WarDayCommands {
                         + teamAResult.containersCleared() + " containers cleared, "
                         + teamAEntityResult.entitiesCopied() + " decorative entities, "
                         + teamAEntityResult.itemFramesCleared() + " item frames cleared."), true);
+        Optional<BlockPos> safeAttackerSpawn = Optional.empty();
         if (attackerPlan.isPresent()) {
             PlacementPlan plan = attackerPlan.get();
             CopyResult attackerResult = copyBase(attackerSourceLevel, targetLevel, plan);
             EntityCopyResult attackerEntityResult = copyDecorativeEntities(attackerSourceLevel, targetLevel, plan);
+            safeAttackerSpawn = findSafeSpawnPos(targetLevel, plan);
+            if (safeAttackerSpawn.isEmpty()) {
+                source.sendFailure(message(ChatFormatting.RED,
+                        "Copied attacker spawn area, but no safe two-block-tall landing spot was found near "
+                                + formatPos(plan.targetAnchorPos()) + ". Move the attacker spawn marker or clear space above it, then rerun /warday prepare confirm."));
+                return 0;
+            }
+            BlockPos spawnPos = safeAttackerSpawn.get();
             source.sendSuccess(() -> message(ChatFormatting.GREEN,
                     "Copied attacker spawn area: " + attackerResult.blocksCopied()
                             + " blocks, " + attackerResult.blockEntitiesCopied() + " block entities, "
                             + attackerResult.containersCleared() + " containers cleared, "
                             + attackerEntityResult.entitiesCopied() + " decorative entities, "
-                            + attackerEntityResult.itemFramesCleared() + " item frames cleared. Spawn at "
-                            + formatPos(plan.targetAnchorPos())), true);
+                            + attackerEntityResult.itemFramesCleared() + " item frames cleared. Safe spawn at "
+                            + formatPos(spawnPos)), true);
         }
         WarDayState state = WarDayState.get(source.getServer());
         state.markPrepared(
@@ -336,7 +348,7 @@ public class WarDayCommands {
                 bases.teamA().team().getName().getString(),
                 bases.attackerArea().isPresent() ? WarDayConfig.TEAM_B_NAME.get() : "",
                 teamAPlan.targetPos(bases.teamA().nexus().pos()),
-                attackerPlan.map(PlacementPlan::targetAnchorPos).orElse(null)
+                safeAttackerSpawn.orElse(null)
         );
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
                 "Copied bases are not rotated yet. Nexus win tracking will be added in a later pass."), false);
@@ -433,14 +445,14 @@ public class WarDayCommands {
                 ensureInventoryHasAtLeast(player, WarDayMod.NEXUS_ITEM.get(), MATCH_BLOCK_TARGET_COUNT);
                 defenders++;
             } else if (attackerIds.contains(id)) {
-                teleportPlayer(player, warDayLevel, state.attackerSpawnPos().get().offset(0, 1, 0));
-                setPlayerSpawn(player, warDayLevel, state.attackerSpawnPos().get().offset(0, 1, 0));
+                teleportPlayer(player, warDayLevel, state.attackerSpawnPos().get());
+                setPlayerSpawn(player, warDayLevel, state.attackerSpawnPos().get());
                 player.setGameMode(GameType.SURVIVAL);
                 ensureInventoryHasAtLeast(player, WarDayMod.ATTACKER_SPAWN_ITEM.get(), MATCH_BLOCK_TARGET_COUNT);
                 attackers++;
             } else {
                 player.setGameMode(GameType.SPECTATOR);
-                teleportPlayer(player, warDayLevel, state.attackerSpawnPos().get().offset(0, 12, 0));
+                teleportPlayer(player, warDayLevel, state.attackerSpawnPos().get().offset(0, 11, 0));
                 spectators++;
             }
         }
@@ -459,7 +471,57 @@ public class WarDayCommands {
             return;
         }
 
-        giveRespawnMatchBlocks(player);
+        Optional<ParticipantRespawn> respawn = participantRespawn(player);
+        if (respawn.isEmpty()) {
+            giveRespawnMatchBlocks(player);
+            return;
+        }
+
+        ParticipantRespawn participant = respawn.get();
+        int delayTicks = WarDayConfig.RESPAWN_DELAY_SECONDS.getAsInt() * 20;
+        if (delayTicks <= 0) {
+            restoreDelayedRespawn(player, participant);
+            return;
+        }
+
+        PENDING_RESPAWNS.put(player.getUUID(), new PendingRespawn(delayTicks, participant));
+        player.setGameMode(GameType.SPECTATOR);
+        teleportPlayer(player, participant.level(), participant.spawnPos().offset(0, 11, 0));
+        player.sendSystemMessage(message(ChatFormatting.YELLOW,
+                "Respawning in " + WarDayConfig.RESPAWN_DELAY_SECONDS.getAsInt() + " seconds."));
+    }
+
+    @SubscribeEvent
+    public void onServerTick(ServerTickEvent.Post event) {
+        if (PENDING_RESPAWNS.isEmpty()) {
+            return;
+        }
+
+        WarDayState state = WarDayState.get(event.getServer());
+        if (!state.isActive()) {
+            PENDING_RESPAWNS.clear();
+            return;
+        }
+
+        Iterator<Map.Entry<UUID, PendingRespawn>> iterator = PENDING_RESPAWNS.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, PendingRespawn> entry = iterator.next();
+            ServerPlayer player = event.getServer().getPlayerList().getPlayer(entry.getKey());
+            if (player == null) {
+                iterator.remove();
+                continue;
+            }
+
+            PendingRespawn pending = entry.getValue().tick();
+            if (pending.ticksRemaining() > 0) {
+                entry.setValue(pending);
+                continue;
+            }
+
+            Optional<ParticipantRespawn> currentRespawn = participantRespawn(player);
+            restoreDelayedRespawn(player, currentRespawn.orElse(pending.participant()));
+            iterator.remove();
+        }
     }
 
     private int end(CommandSourceStack source) {
@@ -515,6 +577,7 @@ public class WarDayCommands {
         }
 
         state.end();
+        PENDING_RESPAWNS.clear();
         return restored;
     }
 
@@ -573,6 +636,50 @@ public class WarDayCommands {
 
     private static void setPlayerSpawn(ServerPlayer player, ServerLevel level, BlockPos pos) {
         player.setRespawnPosition(level.dimension(), pos, player.getYRot(), true, false);
+    }
+
+    private static Optional<ParticipantRespawn> participantRespawn(ServerPlayer player) {
+        MinecraftServer server = player.getServer();
+        if (server == null || !FTBTeamsAPI.api().isManagerLoaded()) {
+            return Optional.empty();
+        }
+
+        WarDayState state = WarDayState.get(server);
+        if (!state.isActive()) {
+            return Optional.empty();
+        }
+
+        ServerLevel warDayLevel;
+        try {
+            ResourceKey<Level> dimension = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(state.warDayDimension()));
+            warDayLevel = server.getLevel(dimension);
+        } catch (Exception ignored) {
+            return Optional.empty();
+        }
+        if (warDayLevel == null) {
+            return Optional.empty();
+        }
+
+        TeamManager teamManager = FTBTeamsAPI.api().getManager();
+        Optional<Team> defenderTeam = findTeamByConfiguredName(teamManager, WarDayConfig.TEAM_A_NAME.get());
+        Optional<Team> attackerTeam = findTeamByConfiguredName(teamManager, WarDayConfig.TEAM_B_NAME.get());
+        UUID playerId = player.getUUID();
+
+        if (defenderTeam.map(team -> team.getMembers().contains(playerId)).orElse(false) && state.copiedNexusPos().isPresent()) {
+            return Optional.of(new ParticipantRespawn(warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0), WarDayMod.NEXUS_ITEM.get()));
+        }
+        if (attackerTeam.map(team -> team.getMembers().contains(playerId)).orElse(false) && state.attackerSpawnPos().isPresent()) {
+            return Optional.of(new ParticipantRespawn(warDayLevel, state.attackerSpawnPos().get(), WarDayMod.ATTACKER_SPAWN_ITEM.get()));
+        }
+
+        return Optional.empty();
+    }
+
+    private static void restoreDelayedRespawn(ServerPlayer player, ParticipantRespawn respawn) {
+        teleportPlayer(player, respawn.level(), respawn.spawnPos());
+        setPlayerSpawn(player, respawn.level(), respawn.spawnPos());
+        player.setGameMode(GameType.SURVIVAL);
+        ensureInventoryHasAtLeast(player, respawn.matchBlock(), MATCH_BLOCK_TARGET_COUNT);
     }
 
     private Optional<ResolvedBases> resolveBases(CommandSourceStack source) {
@@ -1008,6 +1115,57 @@ public class WarDayCommands {
         return new EntityCopyResult(copied, itemFramesCleared);
     }
 
+    private static Optional<BlockPos> findSafeSpawnPos(ServerLevel level, PlacementPlan plan) {
+        BlockPos preferred = plan.targetAnchorPos().above();
+        if (isSafeSpawnPos(level, preferred)) {
+            return Optional.of(preferred);
+        }
+
+        int minX = Math.max(plan.targetMinX(), preferred.getX() - 8);
+        int maxX = Math.min(plan.targetMaxX(), preferred.getX() + 8);
+        int minZ = Math.max(plan.targetMinZ(), preferred.getZ() - 8);
+        int maxZ = Math.min(plan.targetMaxZ(), preferred.getZ() + 8);
+        int minY = Math.max(level.getMinBuildHeight() + 1, preferred.getY() - 4);
+        int maxY = Math.min(level.getMaxBuildHeight() - 2, preferred.getY() + 4);
+
+        for (int distance = 1; distance <= 8; distance++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int x = minX; x <= maxX; x++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        if (Math.max(Math.abs(x - preferred.getX()), Math.abs(z - preferred.getZ())) != distance) {
+                            continue;
+                        }
+
+                        BlockPos candidate = new BlockPos(x, y, z);
+                        if (isSafeSpawnPos(level, candidate)) {
+                            return Optional.of(candidate);
+                        }
+                    }
+                }
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private static boolean isSafeSpawnPos(ServerLevel level, BlockPos feetPos) {
+        if (feetPos.getY() <= level.getMinBuildHeight() || feetPos.getY() + 1 >= level.getMaxBuildHeight()) {
+            return false;
+        }
+
+        BlockPos groundPos = feetPos.below();
+        return hasCollision(level, groundPos) && isClearForPlayer(level, feetPos) && isClearForPlayer(level, feetPos.above());
+    }
+
+    private static boolean hasCollision(ServerLevel level, BlockPos pos) {
+        return !level.getBlockState(pos).getCollisionShape(level, pos).isEmpty();
+    }
+
+    private static boolean isClearForPlayer(ServerLevel level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        return state.getCollisionShape(level, pos).isEmpty() && state.getFluidState().isEmpty();
+    }
+
     private static boolean isAllowedDecorativeEntity(Entity entity) {
         return entity instanceof Painting || entity instanceof ItemFrame;
     }
@@ -1152,8 +1310,20 @@ public class WarDayCommands {
     ) {
         private static AttackerArea from(AttackerValidation validation, ClaimedChunkManager chunkManager) {
             AttackerSpawn spawn = validation.spawn();
-            Set<ChunkDimPos> cluster = connectedClaimCluster(validation.team(), spawn.chunkDimPos(), chunkManager);
+            Set<ChunkDimPos> cluster = attackerSpawnCluster(validation.team(), spawn, chunkManager);
             return new AttackerArea(validation.team(), spawn, cluster, ClusterBounds.from(cluster), spawn.dimension());
+        }
+
+        private static Set<ChunkDimPos> attackerSpawnCluster(Team team, AttackerSpawn spawn, ClaimedChunkManager chunkManager) {
+            ChunkDimPos spawnChunk = spawn.chunkDimPos();
+            Set<ChunkDimPos> cluster = connectedClaimCluster(team, spawnChunk, chunkManager);
+            if (cluster.contains(spawnChunk)) {
+                return cluster;
+            }
+
+            Set<ChunkDimPos> clusterWithSpawn = new HashSet<>(cluster);
+            clusterWithSpawn.add(spawnChunk);
+            return clusterWithSpawn;
         }
     }
 
@@ -1276,5 +1446,14 @@ public class WarDayCommands {
     }
 
     private record EntityCopyResult(int entitiesCopied, int itemFramesCleared) {
+    }
+
+    private record ParticipantRespawn(ServerLevel level, BlockPos spawnPos, Item matchBlock) {
+    }
+
+    private record PendingRespawn(int ticksRemaining, ParticipantRespawn participant) {
+        private PendingRespawn tick() {
+            return new PendingRespawn(ticksRemaining - 1, participant);
+        }
     }
 }

@@ -11,6 +11,7 @@ public final class WarDayConfig {
     public static final ModConfigSpec.IntValue MAX_BASE_CHUNKS;
     public static final ModConfigSpec.IntValue MAX_BASE_FOOTPRINT_BLOCKS;
     public static final ModConfigSpec.IntValue WAR_DAY_BASE_Y;
+    public static final ModConfigSpec.IntValue RESPAWN_DELAY_SECONDS;
     public static final ModConfigSpec.ConfigValue<String> WAR_DAY_DIMENSION;
 
     static {
@@ -44,6 +45,9 @@ public final class WarDayConfig {
         WAR_DAY_BASE_Y = builder
                 .comment("Preview target Y level for copied base origins during /warday prepare.")
                 .defineInRange("warDayBaseY", 80, -64, 320);
+        RESPAWN_DELAY_SECONDS = builder
+                .comment("Seconds a War Day participant must wait in spectator mode after respawning before rejoining the fight.")
+                .defineInRange("respawnDelaySeconds", 10, 0, 300);
         builder.pop();
 
         SPEC = builder.build();
