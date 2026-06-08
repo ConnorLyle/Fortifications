@@ -19,6 +19,12 @@
   - `warday:forward_marker`
   - `warday:attacker_spawn`
 - `ForwardMarkerBlock` persists horizontal facing, which is used for reporting the base orientation plan.
+- Defender base rotation has been started in `Warday-Mod/Warday/src/main/java/com/trove/warday/WarDayCommands.java`:
+  - `PlacementPlan` now rotates defender copied positions around the nexus so the forward marker faces east, toward the current attacker-side arena placement at positive X.
+  - Rotated target positions are used by destination conflict checks, full-height destination wiping, block copying, copied nexus state, decorative entity copying, and safe spawn searches.
+  - Copied block states are rotated with `BlockState.rotate(...)`.
+  - Copied decorative entity positions and yaw are rotated, and painting/item-frame tile coordinates are translated through the same rotated block-position path.
+  - `/warday prepare` now reports the rotation plan, and `/warday prepare confirm` no longer says copied bases are unrotated.
 - `WarDayState` persists prepared state, active state, copied nexus position, attacker spawn position, configured dimension, team labels, and player snapshots in Minecraft `SavedData`.
 - Nexus destruction in the active War Day dimension ends the event and restores online players.
 - Respawn handling exists for active participants: players briefly enter spectator mode, are teleported above their spawn, then restored after `respawnDelaySeconds`.
@@ -29,11 +35,20 @@
 
 ## Active/Halted Work
 
-- I was not in the middle of editing a function when this handoff prompt arrived. No feature code was changed as part of this handoff.
-- Based on the newest timestamps, recent active work appears to have been in `Warday-Mod/Warday/src/main/java/com/trove/warday/WarDayCommands.java` and `Warday-Mod/Warday/src/main/java/com/trove/warday/WarDayConfig.java`.
+- Recent active work is in `Warday-Mod/Warday/src/main/java/com/trove/warday/WarDayCommands.java`.
+- Defender base rotation has been implemented at source level but has not been compiled or play-tested yet in this Codex shell.
+- Verification was blocked because:
+  - `gradle build` from `Warday-Mod/Warday` failed because `gradle` is not on PATH.
+  - Reusing the Fortifications Gradle wrapper with `-p Warday-Mod/Warday build` failed because `JAVA_HOME` is not set and `java` is not on PATH.
+  - A recursive local search from usual install roots did not find `java.exe`.
+  - `git diff`/`git status` could not be obtained because `git` is not on PATH.
+- Source-level sanity checks were performed:
+  - Brace count matched in `WarDayCommands.java`.
+  - No stale references were found for removed one-axis transform helpers such as `targetBlockX`, `targetBlockY`, `targetBlockZ`, `sourceXForZ`, or `sourceZForX`.
+- The rotation implementation assumes the defender target facing is east because the defender anchor is `[0, warDayBaseY, 0]` and the attacker anchor is `[baseSpacingBlocks, warDayBaseY, 0]`.
 - The most likely half-finished area is Warday gameplay completion, not compilation:
-  - `prepareConfirm` explicitly tells the operator that copied bases are not rotated yet.
-  - Base placement preserves source X/Y/Z offsets and does not currently rotate copied bases according to the forward marker.
+  - Defender base rotation source code is present, but it still needs a real compile and in-game validation.
+  - Attacker spawn areas remain unrotated because they do not have a forward marker/orientation marker.
   - Only decorative entities `Painting` and `ItemFrame` are copied.
   - Item frames are copied but their items are cleared.
   - Containers are copied structurally but their contents are cleared.
@@ -44,9 +59,18 @@
 
 ## Next Immediate Steps
 
-1. Manually play-test the full Warday flow on a local NeoForge server with FTB Teams and FTB Chunks installed: create teams, claim chunks, place setup blocks, run `/warday validate`, `/warday prepare confirm`, `/warday start`, break the copied nexus, and confirm restoration.
-2. Implement or explicitly defer base rotation. The current `PlacementPlan` only translates positions from the source anchor to target anchor; the forward marker facing is only reported, not applied to block/entity transforms.
-3. Harden active-match edge cases: offline player restoration, players joining during an active match, dimension unload/reload behavior, and respawn behavior if prepared positions become invalid.
+1. From a developer shell with Java and Gradle available, compile Warday:
+   - `cd "C:\Users\Connor.Lyle\Documents\GitHub\Fortifications\Warday-Mod\Warday"`
+   - `gradle build`
+2. Review `WarDayCommands.java` with `git diff` once Git is available, especially the `PlacementPlan` rotation math and NBT entity yaw/tile-coordinate handling.
+3. Manually play-test defender base rotation on a local NeoForge server with FTB Teams and FTB Chunks installed:
+   - create teams and claims,
+   - place a defender nexus and forward marker,
+   - test forward marker facings north, south, east, and west,
+   - run `/warday validate`, `/warday prepare`, and `/warday prepare confirm`,
+   - confirm the copied defender marker/base faces east toward the attacker side.
+4. Manually play-test the full Warday flow: run `/warday start`, break the copied nexus, and confirm restoration.
+5. Harden active-match edge cases: offline player restoration, players joining during an active match, dimension unload/reload behavior, and respawn behavior if prepared positions become invalid.
 
 # 2. Architectural Decisions & Patterns
 
@@ -56,7 +80,7 @@
 - Data that must survive server restart is separated into `WarDayState`, backed by Minecraft `SavedData`. Runtime-only delay bookkeeping remains in the static `PENDING_RESPAWNS` map because it is short-lived and only meaningful while the server process is active.
 - Setup blocks are deliberately simple block classes. `NexusBlock` is just a marker block. `ForwardMarkerBlock` extends `HorizontalDirectionalBlock` only because the facing is needed to express intended base orientation.
 - Config is centralized in `WarDayConfig` using NeoForge `ModConfigSpec`, so team names, scan radius, base limits, target dimension, target Y, spacing, and respawn delay can be changed without recompiling.
-- `PlacementPlan` is a record local to `WarDayCommands` because the copy algorithm currently needs only a compact value object: source anchor, target anchor, cluster bounds, and coordinate translation helpers.
+- `PlacementPlan` is a record local to `WarDayCommands` because the copy algorithm currently needs only a compact value object: source anchor, target anchor, cluster bounds, rotation, and coordinate translation helpers.
 - Fortifications uses `FortificationBlockRules` as a small policy class instead of baking block checks directly into event/mixin code. This makes the Warday exemption easy to see and test later.
 
 ## Cross-Boundary Communication
@@ -66,8 +90,8 @@
 - Warday communicates with FTB Chunks through `FTBChunksAPI.api().getManager()`, `ClaimedChunkManager`, `ClaimedChunk`, and `ChunkDimPos`.
 - Team ownership is inferred from the FTB Chunks claim owner for the chunk containing each setup block.
 - Persistent server state is serialized to NBT in `WarDayState.save` and deserialized in `WarDayState.load`.
-- Block entities are copied by saving source block entity NBT with `saveWithFullMetadata`, rewriting `x/y/z`, then loading that data into the target block entity with `loadWithComponents`.
-- Decorative entities are copied by serializing entity NBT, removing `UUID`, translating `Pos` and hanging entity tile coordinates, then recreating the entity with `EntityType.create`.
+- Block entities are copied by saving source block entity NBT with `saveWithFullMetadata`, rewriting `x/y/z`, then loading that data into the target block entity with `loadWithComponents`. The target block state is now rotated before placement for defender bases.
+- Decorative entities are copied by serializing entity NBT, removing `UUID`, translating `Pos`, rotating yaw, translating hanging entity tile coordinates, then recreating the entity with `EntityType.create`.
 - Player snapshots serialize game mode, dimension id, coordinates, and rotation. Restoration parses the saved dimension id back into a `ResourceKey<Level>`.
 
 ## Complex Logic
@@ -76,9 +100,9 @@
 - Defender validation requires exactly one owned nexus, exactly one owned forward marker, and the marker chunk must be inside the connected claim cluster rooted at the nexus.
 - Attacker validation requires exactly one owned attacker spawn marker.
 - Guardrails check connected cluster size and footprint width/depth against config values before preparation.
-- Copy preparation computes a source cluster bounding box, an anchor offset from source min, and translated target coordinates. It preserves vertical coordinates relative to the source anchor and target Y.
-- Destination checking scans all non-air source blocks and detects whether translated target positions are already occupied.
-- Destination wiping clears every non-air block in the computed destination footprint across the target dimension's full build height.
+- Copy preparation computes a source cluster bounding box, an anchor offset from source min, rotation from defender forward marker facing to east, and target coordinates. It preserves vertical coordinates relative to the source anchor and target Y.
+- Destination checking scans all non-air source blocks and detects whether rotated target positions are already occupied.
+- Destination wiping clears every non-air block in the computed rotated destination footprint across the target dimension's full build height.
 - Safe attacker spawn selection first tries one block above the target anchor, then searches nearby positions for solid ground and two collision-free/fluid-free player spaces.
 - Respawn delay uses a per-tick countdown map keyed by player UUID and restores survival/game spawn when the delay expires.
 
@@ -111,7 +135,8 @@
 # 4. Known Tech Debt, Hacks, & AI Shortcuts
 
 - `WarDayCommands` is very large and mixes command registration, validation, copy/paste, event handlers, persistence coordination, and reporting. It should eventually be split into services such as validation, placement/copy, lifecycle, and respawn handling.
-- Base rotation is not implemented. Forward marker facing is stored and reported but not used to rotate blocks, block entities, or entities.
+- Defender base rotation has source-level implementation, but it is uncompiled and untested in-game. Treat it as pending verification, especially for modded blocks, block entities with directional NBT, paintings, and item frames.
+- Attacker spawn-area rotation is not implemented. There is currently no attacker orientation marker, so attacker areas are copied without rotation.
 - Several gameplay values are effectively hardcoded:
   - Match block target count is `32`.
   - Defender target anchor is `[0, warDayBaseY, 0]`.

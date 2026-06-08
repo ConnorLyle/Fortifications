@@ -17,6 +17,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -36,6 +37,7 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -182,7 +184,7 @@ public class WarDayCommands {
         source.sendSuccess(() -> message(ChatFormatting.AQUA,
                 "War Day validation for " + WarDayConfig.TEAM_A_NAME.get() + " vs " + WarDayConfig.TEAM_B_NAME.get()), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
-                "Copied defender base preserves source X/Y/Z coordinates."), false);
+                "Copied defender base rotates around its nexus so the forward marker faces the attacker side."), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "Scanning " + context.radius() + " blocks around " + context.level().dimension().location() + " " + formatPos(context.center())), false);
 
@@ -351,7 +353,7 @@ public class WarDayCommands {
                 safeAttackerSpawn.orElse(null)
         );
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                "Copied bases are not rotated yet. Nexus win tracking will be added in a later pass."), false);
+                "Copied defender base rotation applied. Nexus win tracking will be added in a later pass."), false);
         return 1;
     }
 
@@ -789,7 +791,7 @@ public class WarDayCommands {
             if (state.is(WarDayMod.NEXUS.get())) {
                 nexuses.add(new LocatedBlock(level.dimension(), pos.immutable(), null, getClaimOwner(chunkManager, level, pos)));
             } else if (state.is(WarDayMod.FORWARD_MARKER.get())) {
-                String facing = state.getValue(ForwardMarkerBlock.FACING).getName();
+                Direction facing = state.getValue(ForwardMarkerBlock.FACING);
                 forwardMarkers.add(new LocatedBlock(level.dimension(), pos.immutable(), facing, getClaimOwner(chunkManager, level, pos)));
             } else if (state.is(WarDayMod.ATTACKER_SPAWN.get())) {
                 attackerSpawns.add(new AttackerSpawn(level.dimension(), pos.immutable(), getClaimOwner(chunkManager, level, pos)));
@@ -960,6 +962,8 @@ public class WarDayCommands {
                 "- target footprint: [" + plan.targetMinX() + ", " + plan.targetMinZ() + "] to ["
                         + plan.targetMaxX() + ", " + plan.targetMaxZ() + "]"), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                "- rotation: " + plan.rotationDescription()), false);
+        source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "- anchor offset from source min: " + formatPos(plan.anchorOffset())), false);
         plan.baseArea().ifPresent(baseArea -> source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "- forward marker offset from source min: " + formatPos(plan.offsetFromSourceMin(baseArea.forwardMarker().pos()))
@@ -1029,7 +1033,7 @@ public class WarDayCommands {
                         if (targetPos.getY() < targetLevel.getMinBuildHeight() || targetPos.getY() >= targetLevel.getMaxBuildHeight()) {
                             continue;
                         }
-                        targetLevel.setBlock(targetPos, sourceState, 3);
+                        targetLevel.setBlock(targetPos, plan.targetState(sourceState), 3);
                         blocksCopied++;
 
                         BlockEntity sourceBlockEntity = sourceLevel.getBlockEntity(sourcePos);
@@ -1091,10 +1095,11 @@ public class WarDayCommands {
 
             tag.remove("UUID");
             tag.put("Pos", newDoubleList(
-                    plan.targetX(sourceEntity.getX()),
+                    plan.targetX(sourceEntity.getX(), sourceEntity.getZ()),
                     plan.targetY(sourceEntity.getY()),
-                    plan.targetZ(sourceEntity.getZ())
+                    plan.targetZ(sourceEntity.getX(), sourceEntity.getZ())
             ));
+            rotateEntityYaw(tag, plan);
             translateHangingEntityTile(tag, plan);
 
             Optional<Entity> copiedEntity = EntityType.create(tag, targetLevel);
@@ -1170,15 +1175,25 @@ public class WarDayCommands {
         return entity instanceof Painting || entity instanceof ItemFrame;
     }
 
+    private static void rotateEntityYaw(CompoundTag tag, PlacementPlan plan) {
+        if (!tag.contains("Rotation")) {
+            return;
+        }
+
+        ListTag rotation = tag.getList("Rotation", net.minecraft.nbt.Tag.TAG_FLOAT);
+        if (rotation.isEmpty()) {
+            return;
+        }
+
+        rotation.set(0, net.minecraft.nbt.FloatTag.valueOf(rotation.getFloat(0) + plan.rotationDegrees()));
+    }
+
     private static void translateHangingEntityTile(CompoundTag tag, PlacementPlan plan) {
-        if (tag.contains("TileX")) {
-            tag.putInt("TileX", plan.targetBlockX(tag.getInt("TileX")));
-        }
-        if (tag.contains("TileY")) {
-            tag.putInt("TileY", plan.targetBlockY(tag.getInt("TileY")));
-        }
-        if (tag.contains("TileZ")) {
-            tag.putInt("TileZ", plan.targetBlockZ(tag.getInt("TileZ")));
+        if (tag.contains("TileX") && tag.contains("TileY") && tag.contains("TileZ")) {
+            BlockPos targetPos = plan.targetPos(new BlockPos(tag.getInt("TileX"), tag.getInt("TileY"), tag.getInt("TileZ")));
+            tag.putInt("TileX", targetPos.getX());
+            tag.putInt("TileY", targetPos.getY());
+            tag.putInt("TileZ", targetPos.getZ());
         }
     }
 
@@ -1198,7 +1213,7 @@ public class WarDayCommands {
         return "[" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + "]";
     }
 
-    private record LocatedBlock(ResourceKey<Level> dimension, BlockPos pos, String facing, Optional<Team> owner) {
+    private record LocatedBlock(ResourceKey<Level> dimension, BlockPos pos, Direction facing, Optional<Team> owner) {
         private boolean isOwnedBy(Team team) {
             return owner.map(value -> value.getId().equals(team.getId())).orElse(false);
         }
@@ -1339,6 +1354,8 @@ public class WarDayCommands {
             BlockPos targetAnchorPos,
             Optional<BaseArea> baseArea
     ) {
+        private static final Direction DEFENDER_TARGET_FACING = Direction.EAST;
+
         private static PlacementPlan from(BaseArea baseArea, BlockPos targetAnchorPos) {
             return new PlacementPlan(
                     baseArea.team().getName().getString(),
@@ -1368,19 +1385,19 @@ public class WarDayCommands {
         }
 
         private int targetMinX() {
-            return targetAnchorPos.getX() - anchorOffset().getX();
+            return targetFootprint().minX();
         }
 
         private int targetMinZ() {
-            return targetAnchorPos.getZ() - anchorOffset().getZ();
+            return targetFootprint().minZ();
         }
 
         private int targetMaxX() {
-            return targetMinX() + bounds.blockWidth() - 1;
+            return targetFootprint().maxX();
         }
 
         private int targetMaxZ() {
-            return targetMinZ() + bounds.blockDepth() - 1;
+            return targetFootprint().maxZ();
         }
 
         private BlockPos anchorOffset() {
@@ -1396,11 +1413,20 @@ public class WarDayCommands {
         }
 
         private BlockPos targetPos(BlockPos sourcePos) {
-            return new BlockPos(
-                    targetBlockX(sourcePos.getX()),
-                    targetBlockY(sourcePos.getY()),
-                    targetBlockZ(sourcePos.getZ())
+            BlockPos rotatedOffset = rotateOffset(
+                    sourcePos.getX() - anchorPos.getX(),
+                    sourcePos.getY() - anchorPos.getY(),
+                    sourcePos.getZ() - anchorPos.getZ()
             );
+            return new BlockPos(
+                    targetAnchorPos.getX() + rotatedOffset.getX(),
+                    targetAnchorPos.getY() + rotatedOffset.getY(),
+                    targetAnchorPos.getZ() + rotatedOffset.getZ()
+            );
+        }
+
+        private BlockState targetState(BlockState sourceState) {
+            return sourceState.rotate(rotation());
         }
 
         private AABB sourceEntityBounds(ServerLevel sourceLevel) {
@@ -1414,29 +1440,116 @@ public class WarDayCommands {
             );
         }
 
-        private double targetX(double sourceX) {
-            return sourceX + targetAnchorPos.getX() - anchorPos.getX();
-        }
-
         private double targetY(double sourceY) {
             return sourceY + targetAnchorPos.getY() - anchorPos.getY();
         }
 
-        private double targetZ(double sourceZ) {
-            return sourceZ + targetAnchorPos.getZ() - anchorPos.getZ();
+        private double targetX(double sourceX, double sourceZ) {
+            return targetAnchorPos.getX() + rotatedOffsetX(sourceX - anchorPos.getX(), sourceZ - anchorPos.getZ());
         }
 
-        private int targetBlockX(int sourceX) {
-            return sourceX + targetAnchorPos.getX() - anchorPos.getX();
+        private double targetZ(double sourceX, double sourceZ) {
+            return targetAnchorPos.getZ() + rotatedOffsetZ(sourceX - anchorPos.getX(), sourceZ - anchorPos.getZ());
         }
 
-        private int targetBlockY(int sourceY) {
-            return sourceY + targetAnchorPos.getY() - anchorPos.getY();
+        private Rotation rotation() {
+            return baseArea
+                    .map(area -> rotationBetween(area.forwardMarker().facing(), DEFENDER_TARGET_FACING))
+                    .orElse(Rotation.NONE);
         }
 
-        private int targetBlockZ(int sourceZ) {
-            return sourceZ + targetAnchorPos.getZ() - anchorPos.getZ();
+        private String rotationDescription() {
+            return baseArea
+                    .map(area -> area.forwardMarker().facing().getName() + " -> " + DEFENDER_TARGET_FACING.getName()
+                            + " (" + rotationDegrees() + " degrees)")
+                    .orElse("none");
         }
+
+        private int rotationDegrees() {
+            return switch (rotation()) {
+                case NONE -> 0;
+                case CLOCKWISE_90 -> 90;
+                case CLOCKWISE_180 -> 180;
+                case COUNTERCLOCKWISE_90 -> -90;
+            };
+        }
+
+        private TargetFootprint targetFootprint() {
+            int minX = Integer.MAX_VALUE;
+            int minZ = Integer.MAX_VALUE;
+            int maxX = Integer.MIN_VALUE;
+            int maxZ = Integer.MIN_VALUE;
+
+            int sourceMinX = bounds.minBlockX();
+            int sourceMinZ = bounds.minBlockZ();
+            int sourceMaxX = sourceMinX + bounds.blockWidth() - 1;
+            int sourceMaxZ = sourceMinZ + bounds.blockDepth() - 1;
+            int[] xs = {sourceMinX, sourceMaxX};
+            int[] zs = {sourceMinZ, sourceMaxZ};
+            for (int x : xs) {
+                for (int z : zs) {
+                    BlockPos target = targetPos(new BlockPos(x, anchorPos.getY(), z));
+                    minX = Math.min(minX, target.getX());
+                    minZ = Math.min(minZ, target.getZ());
+                    maxX = Math.max(maxX, target.getX());
+                    maxZ = Math.max(maxZ, target.getZ());
+                }
+            }
+
+            return new TargetFootprint(minX, minZ, maxX, maxZ);
+        }
+
+        private BlockPos rotateOffset(int x, int y, int z) {
+            return switch (rotation()) {
+                case NONE -> new BlockPos(x, y, z);
+                case CLOCKWISE_90 -> new BlockPos(-z, y, x);
+                case CLOCKWISE_180 -> new BlockPos(-x, y, -z);
+                case COUNTERCLOCKWISE_90 -> new BlockPos(z, y, -x);
+            };
+        }
+
+        private double rotatedOffsetX(double x, double z) {
+            return switch (rotation()) {
+                case NONE -> x;
+                case CLOCKWISE_90 -> -z;
+                case CLOCKWISE_180 -> -x;
+                case COUNTERCLOCKWISE_90 -> z;
+            };
+        }
+
+        private double rotatedOffsetZ(double x, double z) {
+            return switch (rotation()) {
+                case NONE -> z;
+                case CLOCKWISE_90 -> x;
+                case CLOCKWISE_180 -> -z;
+                case COUNTERCLOCKWISE_90 -> -x;
+            };
+        }
+
+        private static Rotation rotationBetween(Direction source, Direction target) {
+            int turns = Math.floorMod(horizontalIndex(target) - horizontalIndex(source), 4);
+            return switch (turns) {
+                case 0 -> Rotation.NONE;
+                case 1 -> Rotation.CLOCKWISE_90;
+                case 2 -> Rotation.CLOCKWISE_180;
+                case 3 -> Rotation.COUNTERCLOCKWISE_90;
+                default -> Rotation.NONE;
+            };
+        }
+
+        private static int horizontalIndex(Direction direction) {
+            return switch (direction) {
+                case NORTH -> 0;
+                case EAST -> 1;
+                case SOUTH -> 2;
+                case WEST -> 3;
+                default -> 0;
+            };
+        }
+
+    }
+
+    private record TargetFootprint(int minX, int minZ, int maxX, int maxZ) {
     }
 
     private record CopyCheck(boolean passed, int sourceBlocksChecked, int conflicts, BlockPos firstConflict) {
