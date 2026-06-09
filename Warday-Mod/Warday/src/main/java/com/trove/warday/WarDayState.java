@@ -29,6 +29,10 @@ public class WarDayState extends SavedData {
     private long matchEndGameTime;
     private boolean originalKeepInventory;
     private boolean keepInventoryCaptured;
+    private double originalWorldBorderCenterX;
+    private double originalWorldBorderCenterZ;
+    private double originalWorldBorderSize;
+    private boolean worldBorderCaptured;
     private UUID nexusMarkerId;
     private final Map<UUID, PlayerSnapshot> savedPlayers = new HashMap<>();
 
@@ -55,6 +59,10 @@ public class WarDayState extends SavedData {
         state.matchEndGameTime = tag.getLong("MatchEndGameTime");
         state.originalKeepInventory = tag.getBoolean("OriginalKeepInventory");
         state.keepInventoryCaptured = tag.getBoolean("KeepInventoryCaptured");
+        state.originalWorldBorderCenterX = tag.getDouble("OriginalWorldBorderCenterX");
+        state.originalWorldBorderCenterZ = tag.getDouble("OriginalWorldBorderCenterZ");
+        state.originalWorldBorderSize = tag.getDouble("OriginalWorldBorderSize");
+        state.worldBorderCaptured = tag.getBoolean("WorldBorderCaptured");
         if (tag.hasUUID("NexusMarkerId")) {
             state.nexusMarkerId = tag.getUUID("NexusMarkerId");
         }
@@ -95,6 +103,10 @@ public class WarDayState extends SavedData {
         tag.putLong("MatchEndGameTime", matchEndGameTime);
         tag.putBoolean("OriginalKeepInventory", originalKeepInventory);
         tag.putBoolean("KeepInventoryCaptured", keepInventoryCaptured);
+        tag.putDouble("OriginalWorldBorderCenterX", originalWorldBorderCenterX);
+        tag.putDouble("OriginalWorldBorderCenterZ", originalWorldBorderCenterZ);
+        tag.putDouble("OriginalWorldBorderSize", originalWorldBorderSize);
+        tag.putBoolean("WorldBorderCaptured", worldBorderCaptured);
         if (nexusMarkerId != null) {
             tag.putUUID("NexusMarkerId", nexusMarkerId);
         }
@@ -118,11 +130,22 @@ public class WarDayState extends SavedData {
         setDirty();
     }
 
-    public void start(Map<UUID, PlayerSnapshot> players, long matchEndGameTime, boolean originalKeepInventory) {
+    public void start(
+            Map<UUID, PlayerSnapshot> players,
+            long matchEndGameTime,
+            boolean originalKeepInventory,
+            double originalWorldBorderCenterX,
+            double originalWorldBorderCenterZ,
+            double originalWorldBorderSize
+    ) {
         active = true;
         this.matchEndGameTime = matchEndGameTime;
         this.originalKeepInventory = originalKeepInventory;
         this.keepInventoryCaptured = true;
+        this.originalWorldBorderCenterX = originalWorldBorderCenterX;
+        this.originalWorldBorderCenterZ = originalWorldBorderCenterZ;
+        this.originalWorldBorderSize = originalWorldBorderSize;
+        this.worldBorderCaptured = true;
         savedPlayers.clear();
         savedPlayers.putAll(players);
         setDirty();
@@ -136,6 +159,7 @@ public class WarDayState extends SavedData {
         active = false;
         matchEndGameTime = 0L;
         keepInventoryCaptured = false;
+        worldBorderCaptured = false;
         nexusMarkerId = null;
         savedPlayers.clear();
         setDirty();
@@ -179,6 +203,22 @@ public class WarDayState extends SavedData {
 
     public boolean keepInventoryCaptured() {
         return keepInventoryCaptured;
+    }
+
+    public double originalWorldBorderCenterX() {
+        return originalWorldBorderCenterX;
+    }
+
+    public double originalWorldBorderCenterZ() {
+        return originalWorldBorderCenterZ;
+    }
+
+    public double originalWorldBorderSize() {
+        return originalWorldBorderSize;
+    }
+
+    public boolean worldBorderCaptured() {
+        return worldBorderCaptured;
     }
 
     public Optional<UUID> nexusMarkerId() {

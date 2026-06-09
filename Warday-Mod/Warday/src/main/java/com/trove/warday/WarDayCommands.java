@@ -50,6 +50,7 @@ import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
@@ -482,6 +483,9 @@ public class WarDayCommands {
         }
 
         boolean originalKeepInventory = warDayLevel.getGameRules().getBoolean(GameRules.RULE_KEEPINVENTORY);
+        double originalWorldBorderCenterX = warDayLevel.getWorldBorder().getCenterX();
+        double originalWorldBorderCenterZ = warDayLevel.getWorldBorder().getCenterZ();
+        double originalWorldBorderSize = warDayLevel.getWorldBorder().getSize();
         warDayLevel.getGameRules().getRule(GameRules.RULE_KEEPINVENTORY).set(true, source.getServer());
         configureWorldBorder(warDayLevel, state.copiedNexusPos().get());
         spawnNexusMarker(warDayLevel, state, state.copiedNexusPos().get());
@@ -490,7 +494,14 @@ public class WarDayCommands {
         PENDING_RESPAWNS.clear();
 
         long matchEndGameTime = warDayLevel.getGameTime() + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt() * 20L;
-        state.start(snapshots, matchEndGameTime, originalKeepInventory);
+        state.start(
+                snapshots,
+                matchEndGameTime,
+                originalKeepInventory,
+                originalWorldBorderCenterX,
+                originalWorldBorderCenterZ,
+                originalWorldBorderSize
+        );
         source.getServer().getPlayerList().broadcastSystemMessage(
                 message(ChatFormatting.GREEN, "War Day started for " + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt()
                         + " seconds. Defenders=" + defenders + ", attackers=" + attackers + ", spectators=" + spectators),
@@ -689,6 +700,24 @@ public class WarDayCommands {
         }
     }
 
+    @SubscribeEvent
+    public void onExplosionDetonate(ExplosionEvent.Detonate event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+
+        WarDayState state = WarDayState.get(level.getServer());
+        if (!state.isActive() || state.copiedNexusPos().isEmpty()) {
+            return;
+        }
+        if (!level.dimension().location().toString().equals(state.warDayDimension())) {
+            return;
+        }
+
+        BlockPos nexusPos = state.copiedNexusPos().get();
+        event.getAffectedBlocks().removeIf(pos -> isInNexusShell(pos, nexusPos));
+    }
+
     private static int endActiveWarDay(MinecraftServer server, WarDayState state) {
         int restored = 0;
         Map<UUID, WarDayState.PlayerSnapshot> snapshots = state.savedPlayers();
@@ -705,7 +734,10 @@ public class WarDayCommands {
                     level.getGameRules().getRule(GameRules.RULE_KEEPINVENTORY).set(state.originalKeepInventory(), server)
             );
         }
-        warDayLevel(server, state).ifPresent(level -> removeNexusMarker(level, state));
+        warDayLevel(server, state).ifPresent(level -> {
+            restoreWorldBorder(level, state);
+            removeNexusMarker(level, state);
+        });
         state.end();
         PENDING_RESPAWNS.clear();
         DEATH_COUNTS.clear();
@@ -812,6 +844,15 @@ public class WarDayCommands {
         double size = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2.0D;
         level.getWorldBorder().setCenter(nexusPos.getX() + 0.5D, nexusPos.getZ() + 0.5D);
         level.getWorldBorder().setSize(size);
+    }
+
+    private static void restoreWorldBorder(ServerLevel level, WarDayState state) {
+        if (!state.worldBorderCaptured()) {
+            return;
+        }
+
+        level.getWorldBorder().setCenter(state.originalWorldBorderCenterX(), state.originalWorldBorderCenterZ());
+        level.getWorldBorder().setSize(state.originalWorldBorderSize());
     }
 
     private static void spawnNexusMarker(ServerLevel level, WarDayState state, BlockPos nexusPos) {
