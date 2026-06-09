@@ -17,11 +17,8 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
-<<<<<<< Updated upstream
 import net.minecraft.core.Direction;
-=======
 import net.minecraft.core.registries.BuiltInRegistries;
->>>>>>> Stashed changes
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -31,6 +28,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.decoration.ItemFrame;
@@ -485,6 +483,8 @@ public class WarDayCommands {
 
         boolean originalKeepInventory = warDayLevel.getGameRules().getBoolean(GameRules.RULE_KEEPINVENTORY);
         warDayLevel.getGameRules().getRule(GameRules.RULE_KEEPINVENTORY).set(true, source.getServer());
+        configureWorldBorder(warDayLevel, state.copiedNexusPos().get());
+        spawnNexusMarker(warDayLevel, state, state.copiedNexusPos().get());
         DEATH_COUNTS.clear();
         DIG_HISTORY.clear();
         PENDING_RESPAWNS.clear();
@@ -705,6 +705,7 @@ public class WarDayCommands {
                     level.getGameRules().getRule(GameRules.RULE_KEEPINVENTORY).set(state.originalKeepInventory(), server)
             );
         }
+        warDayLevel(server, state).ifPresent(level -> removeNexusMarker(level, state));
         state.end();
         PENDING_RESPAWNS.clear();
         DEATH_COUNTS.clear();
@@ -805,6 +806,40 @@ public class WarDayCommands {
         } catch (Exception ignored) {
             return Optional.empty();
         }
+    }
+
+    private static void configureWorldBorder(ServerLevel level, BlockPos nexusPos) {
+        double size = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2.0D;
+        level.getWorldBorder().setCenter(nexusPos.getX() + 0.5D, nexusPos.getZ() + 0.5D);
+        level.getWorldBorder().setSize(size);
+    }
+
+    private static void spawnNexusMarker(ServerLevel level, WarDayState state, BlockPos nexusPos) {
+        removeNexusMarker(level, state);
+
+        Display.BlockDisplay marker = EntityType.BLOCK_DISPLAY.create(level);
+        if (marker == null) {
+            return;
+        }
+
+        CompoundTag blockStateTag = new CompoundTag();
+        blockStateTag.putString("Name", WarDayMod.MODID + ":nexus");
+        CompoundTag markerTag = new CompoundTag();
+        markerTag.put("block_state", blockStateTag);
+        marker.load(markerTag);
+        marker.setPos(nexusPos.getX(), nexusPos.getY(), nexusPos.getZ());
+        marker.setGlowingTag(true);
+        marker.setNoGravity(true);
+        marker.setInvulnerable(true);
+
+        level.addFreshEntity(marker);
+        state.setNexusMarkerId(marker.getUUID());
+    }
+
+    private static void removeNexusMarker(ServerLevel level, WarDayState state) {
+        state.nexusMarkerId()
+                .map(level::getEntity)
+                .ifPresent(Entity::discard);
     }
 
     private static boolean isAttacker(ServerPlayer player) {

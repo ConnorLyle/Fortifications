@@ -29,6 +29,7 @@ public class WarDayState extends SavedData {
     private long matchEndGameTime;
     private boolean originalKeepInventory;
     private boolean keepInventoryCaptured;
+    private UUID nexusMarkerId;
     private final Map<UUID, PlayerSnapshot> savedPlayers = new HashMap<>();
 
     public static WarDayState get(MinecraftServer server) {
@@ -54,6 +55,9 @@ public class WarDayState extends SavedData {
         state.matchEndGameTime = tag.getLong("MatchEndGameTime");
         state.originalKeepInventory = tag.getBoolean("OriginalKeepInventory");
         state.keepInventoryCaptured = tag.getBoolean("KeepInventoryCaptured");
+        if (tag.hasUUID("NexusMarkerId")) {
+            state.nexusMarkerId = tag.getUUID("NexusMarkerId");
+        }
         ListTag players = tag.getList("SavedPlayers", 10);
         for (int i = 0; i < players.size(); i++) {
             CompoundTag playerTag = players.getCompound(i);
@@ -91,6 +95,9 @@ public class WarDayState extends SavedData {
         tag.putLong("MatchEndGameTime", matchEndGameTime);
         tag.putBoolean("OriginalKeepInventory", originalKeepInventory);
         tag.putBoolean("KeepInventoryCaptured", keepInventoryCaptured);
+        if (nexusMarkerId != null) {
+            tag.putUUID("NexusMarkerId", nexusMarkerId);
+        }
         ListTag players = new ListTag();
         savedPlayers.forEach((uuid, snapshot) -> {
             CompoundTag playerTag = snapshot.save();
@@ -129,6 +136,7 @@ public class WarDayState extends SavedData {
         active = false;
         matchEndGameTime = 0L;
         keepInventoryCaptured = false;
+        nexusMarkerId = null;
         savedPlayers.clear();
         setDirty();
     }
@@ -171,6 +179,15 @@ public class WarDayState extends SavedData {
 
     public boolean keepInventoryCaptured() {
         return keepInventoryCaptured;
+    }
+
+    public Optional<UUID> nexusMarkerId() {
+        return Optional.ofNullable(nexusMarkerId);
+    }
+
+    public void setNexusMarkerId(UUID nexusMarkerId) {
+        this.nexusMarkerId = nexusMarkerId;
+        setDirty();
     }
 
     public boolean dimensionExists(MinecraftServer server) {
