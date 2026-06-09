@@ -26,6 +26,9 @@ public class WarDayState extends SavedData {
     private String defenderTeam = "";
     private String attackerTeam = "";
     private boolean active;
+    private long matchEndGameTime;
+    private boolean originalKeepInventory;
+    private boolean keepInventoryCaptured;
     private final Map<UUID, PlayerSnapshot> savedPlayers = new HashMap<>();
 
     public static WarDayState get(MinecraftServer server) {
@@ -48,6 +51,9 @@ public class WarDayState extends SavedData {
             state.attackerSpawnPos = BlockPos.of(tag.getLong("AttackerSpawnPos"));
         }
         state.active = tag.getBoolean("Active");
+        state.matchEndGameTime = tag.getLong("MatchEndGameTime");
+        state.originalKeepInventory = tag.getBoolean("OriginalKeepInventory");
+        state.keepInventoryCaptured = tag.getBoolean("KeepInventoryCaptured");
         ListTag players = tag.getList("SavedPlayers", 10);
         for (int i = 0; i < players.size(); i++) {
             CompoundTag playerTag = players.getCompound(i);
@@ -82,6 +88,9 @@ public class WarDayState extends SavedData {
             tag.putLong("AttackerSpawnPos", attackerSpawnPos.asLong());
         }
         tag.putBoolean("Active", active);
+        tag.putLong("MatchEndGameTime", matchEndGameTime);
+        tag.putBoolean("OriginalKeepInventory", originalKeepInventory);
+        tag.putBoolean("KeepInventoryCaptured", keepInventoryCaptured);
         ListTag players = new ListTag();
         savedPlayers.forEach((uuid, snapshot) -> {
             CompoundTag playerTag = snapshot.save();
@@ -102,8 +111,11 @@ public class WarDayState extends SavedData {
         setDirty();
     }
 
-    public void start(Map<UUID, PlayerSnapshot> players) {
+    public void start(Map<UUID, PlayerSnapshot> players, long matchEndGameTime, boolean originalKeepInventory) {
         active = true;
+        this.matchEndGameTime = matchEndGameTime;
+        this.originalKeepInventory = originalKeepInventory;
+        this.keepInventoryCaptured = true;
         savedPlayers.clear();
         savedPlayers.putAll(players);
         setDirty();
@@ -115,6 +127,8 @@ public class WarDayState extends SavedData {
 
     public void end() {
         active = false;
+        matchEndGameTime = 0L;
+        keepInventoryCaptured = false;
         savedPlayers.clear();
         setDirty();
     }
@@ -145,6 +159,18 @@ public class WarDayState extends SavedData {
 
     public String attackerTeam() {
         return attackerTeam;
+    }
+
+    public long matchEndGameTime() {
+        return matchEndGameTime;
+    }
+
+    public boolean originalKeepInventory() {
+        return originalKeepInventory;
+    }
+
+    public boolean keepInventoryCaptured() {
+        return keepInventoryCaptured;
     }
 
     public boolean dimensionExists(MinecraftServer server) {

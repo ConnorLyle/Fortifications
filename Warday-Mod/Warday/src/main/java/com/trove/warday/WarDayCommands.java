@@ -17,7 +17,11 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+<<<<<<< Updated upstream
 import net.minecraft.core.Direction;
+=======
+import net.minecraft.core.registries.BuiltInRegistries;
+>>>>>>> Stashed changes
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -31,11 +35,15 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.decoration.Painting;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -50,6 +58,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -64,8 +73,13 @@ import java.util.concurrent.CompletableFuture;
 public class WarDayCommands {
     private static final int VALIDATE_PERMISSION_LEVEL = 2;
     private static final int MATCH_BLOCK_TARGET_COUNT = 32;
+    private static final int NEXUS_SHELL_RADIUS_XZ = 3;
+    private static final int NEXUS_SHELL_MIN_Y_OFFSET = -3;
+    private static final int NEXUS_SHELL_MAX_Y_OFFSET = 5;
     private static final SuggestionProvider<CommandSourceStack> TEAM_NAME_SUGGESTIONS = WarDayCommands::suggestTeamNames;
     private static final Map<UUID, PendingRespawn> PENDING_RESPAWNS = new HashMap<>();
+    private static final Map<UUID, Integer> DEATH_COUNTS = new HashMap<>();
+    private static final Map<UUID, Deque<Long>> DIG_HISTORY = new HashMap<>();
 
     @SubscribeEvent
     public void registerCommands(RegisterCommandsEvent event) {
@@ -345,13 +359,17 @@ public class WarDayCommands {
                             + formatPos(spawnPos)), true);
         }
         WarDayState state = WarDayState.get(source.getServer());
+        BlockPos copiedNexusPos = teamAPlan.targetPos(bases.teamA().nexus().pos());
+        buildNexusShell(targetLevel, copiedNexusPos);
         state.markPrepared(
                 WarDayConfig.WAR_DAY_DIMENSION.get(),
                 bases.teamA().team().getName().getString(),
                 bases.attackerArea().isPresent() ? WarDayConfig.TEAM_B_NAME.get() : "",
-                teamAPlan.targetPos(bases.teamA().nexus().pos()),
+                copiedNexusPos,
                 safeAttackerSpawn.orElse(null)
         );
+        source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                "Built protected nexus shell at " + formatPos(copiedNexusPos) + "."), true);
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
                 "Copied defender base rotation applied. Nexus win tracking will be added in a later pass."), false);
         return 1;
@@ -380,6 +398,10 @@ public class WarDayCommands {
                     "Copied nexus: " + state.copiedNexusPos().map(WarDayCommands::formatPos).orElse("missing")), false);
             source.sendSuccess(() -> message(ChatFormatting.GRAY,
                     "Attacker spawn: " + state.attackerSpawnPos().map(WarDayCommands::formatPos).orElse("missing")), false);
+            if (state.isActive()) {
+                long secondsRemaining = Math.max(0L, (state.matchEndGameTime() - source.getLevel().getGameTime()) / 20L);
+                source.sendSuccess(() -> message(ChatFormatting.GRAY, "Match time remaining: " + secondsRemaining + " seconds"), false);
+            }
             source.sendSuccess(() -> message(ChatFormatting.GREEN, "Next command: /warday start"), false);
         } else {
             source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Next command: /warday prepare confirm"), false);
@@ -435,6 +457,8 @@ public class WarDayCommands {
         int spectators = 0;
         Set<UUID> defenderIds = defenderTeam.get().getMembers();
         Set<UUID> attackerIds = attackerTeam.get().getMembers();
+        Item defenderBlock = defenderMatchBlock();
+        Item attackerBlock = attackerMatchBlock();
 
         for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
             UUID id = player.getUUID();
@@ -444,13 +468,13 @@ public class WarDayCommands {
                 teleportPlayer(player, warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0));
                 setPlayerSpawn(player, warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0));
                 player.setGameMode(GameType.SURVIVAL);
-                ensureInventoryHasAtLeast(player, WarDayMod.NEXUS_ITEM.get(), MATCH_BLOCK_TARGET_COUNT);
+                ensureInventoryHasAtLeast(player, defenderBlock, MATCH_BLOCK_TARGET_COUNT);
                 defenders++;
             } else if (attackerIds.contains(id)) {
                 teleportPlayer(player, warDayLevel, state.attackerSpawnPos().get());
                 setPlayerSpawn(player, warDayLevel, state.attackerSpawnPos().get());
                 player.setGameMode(GameType.SURVIVAL);
-                ensureInventoryHasAtLeast(player, WarDayMod.ATTACKER_SPAWN_ITEM.get(), MATCH_BLOCK_TARGET_COUNT);
+                ensureInventoryHasAtLeast(player, attackerBlock, MATCH_BLOCK_TARGET_COUNT);
                 attackers++;
             } else {
                 player.setGameMode(GameType.SPECTATOR);
@@ -459,9 +483,17 @@ public class WarDayCommands {
             }
         }
 
-        state.start(snapshots);
+        boolean originalKeepInventory = warDayLevel.getGameRules().getBoolean(GameRules.RULE_KEEPINVENTORY);
+        warDayLevel.getGameRules().getRule(GameRules.RULE_KEEPINVENTORY).set(true, source.getServer());
+        DEATH_COUNTS.clear();
+        DIG_HISTORY.clear();
+        PENDING_RESPAWNS.clear();
+
+        long matchEndGameTime = warDayLevel.getGameTime() + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt() * 20L;
+        state.start(snapshots, matchEndGameTime, originalKeepInventory);
         source.getServer().getPlayerList().broadcastSystemMessage(
-                message(ChatFormatting.GREEN, "War Day started. Defenders=" + defenders + ", attackers=" + attackers + ", spectators=" + spectators),
+                message(ChatFormatting.GREEN, "War Day started for " + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt()
+                        + " seconds. Defenders=" + defenders + ", attackers=" + attackers + ", spectators=" + spectators),
                 false
         );
         return 1;
@@ -480,7 +512,9 @@ public class WarDayCommands {
         }
 
         ParticipantRespawn participant = respawn.get();
-        int delayTicks = WarDayConfig.RESPAWN_DELAY_SECONDS.getAsInt() * 20;
+        int deathCount = DEATH_COUNTS.merge(player.getUUID(), 1, Integer::sum);
+        int delaySeconds = respawnDelaySecondsForDeath(deathCount);
+        int delayTicks = delaySeconds * 20;
         if (delayTicks <= 0) {
             restoreDelayedRespawn(player, participant);
             return;
@@ -490,18 +524,31 @@ public class WarDayCommands {
         player.setGameMode(GameType.SPECTATOR);
         teleportPlayer(player, participant.level(), participant.spawnPos().offset(0, 11, 0));
         player.sendSystemMessage(message(ChatFormatting.YELLOW,
-                "Respawning in " + WarDayConfig.RESPAWN_DELAY_SECONDS.getAsInt() + " seconds."));
+                "Respawning in " + delaySeconds + " seconds."));
     }
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
-        if (PENDING_RESPAWNS.isEmpty()) {
-            return;
-        }
-
         WarDayState state = WarDayState.get(event.getServer());
         if (!state.isActive()) {
             PENDING_RESPAWNS.clear();
+            return;
+        }
+
+        Optional<ServerLevel> warDayLevel = warDayLevel(event.getServer(), state);
+        if (warDayLevel.isPresent() && state.matchEndGameTime() > 0L && warDayLevel.get().getGameTime() >= state.matchEndGameTime()) {
+            int restored = endActiveWarDay(event.getServer(), state);
+            String defenderTeam = state.defenderTeam().isBlank() ? WarDayConfig.TEAM_A_NAME.get() : state.defenderTeam();
+            event.getServer().getPlayerList().broadcastSystemMessage(
+                    message(ChatFormatting.GOLD,
+                            "War Day complete: " + defenderTeam + " defended the nexus until time expired. Restored gamemodes for "
+                                    + restored + " online players."),
+                    false
+            );
+            return;
+        }
+
+        if (PENDING_RESPAWNS.isEmpty()) {
             return;
         }
 
@@ -517,6 +564,7 @@ public class WarDayCommands {
             PendingRespawn pending = entry.getValue().tick();
             if (pending.ticksRemaining() > 0) {
                 entry.setValue(pending);
+                teleportPlayer(player, pending.participant().level(), pending.participant().spawnPos().offset(0, 11, 0));
                 continue;
             }
 
@@ -543,7 +591,7 @@ public class WarDayCommands {
 
     @SubscribeEvent
     public void onBlockBreak(BlockEvent.BreakEvent event) {
-        if (!(event.getLevel() instanceof ServerLevel level) || !event.getState().is(WarDayMod.NEXUS.get())) {
+        if (!(event.getLevel() instanceof ServerLevel level) || !(event.getPlayer() instanceof ServerPlayer player)) {
             return;
         }
 
@@ -552,12 +600,43 @@ public class WarDayCommands {
             return;
         }
 
-        if (!level.dimension().location().toString().equals(state.warDayDimension()) || !event.getPos().equals(state.copiedNexusPos().get())) {
+        if (!level.dimension().location().toString().equals(state.warDayDimension())) {
+            return;
+        }
+
+        Optional<ParticipantRespawn> participant = participantRespawn(player);
+        if (participant.isEmpty()) {
+            event.setCanceled(true);
+            player.displayClientMessage(message(ChatFormatting.RED, "Only War Day participants can break blocks during the match."), true);
+            return;
+        }
+
+        BlockPos nexusPos = state.copiedNexusPos().get();
+        if (!isInMatchBounds(event.getPos(), nexusPos)) {
+            event.setCanceled(true);
+            player.displayClientMessage(message(ChatFormatting.RED, "You cannot break blocks outside the War Day bounds."), true);
+            return;
+        }
+
+        if (isInNexusShell(event.getPos(), nexusPos) && !event.getPos().equals(nexusPos)) {
+            event.setCanceled(true);
+            player.displayClientMessage(message(ChatFormatting.RED, "The nexus shell is protected."), true);
+            return;
+        }
+
+        if (!event.getState().is(WarDayMod.NEXUS.get()) || !event.getPos().equals(nexusPos)) {
+            trackDiggingPenalty(player, level.getGameTime());
+            return;
+        }
+
+        if (!isAttacker(player)) {
+            event.setCanceled(true);
+            player.displayClientMessage(message(ChatFormatting.RED, "Only attackers can destroy the nexus."), true);
             return;
         }
 
         int restored = endActiveWarDay(level.getServer(), state);
-        String breaker = event.getPlayer().getName().getString();
+        String breaker = player.getName().getString();
         String attackerTeam = state.attackerTeam().isBlank() ? WarDayConfig.TEAM_B_NAME.get() : state.attackerTeam();
         level.getServer().getPlayerList().broadcastSystemMessage(
                 message(ChatFormatting.GOLD,
@@ -565,6 +644,49 @@ public class WarDayCommands {
                                 + ". Restored gamemodes for " + restored + " online players."),
                 false
         );
+    }
+
+    @SubscribeEvent
+    public void onBlockPlace(BlockEvent.EntityPlaceEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+
+        WarDayState state = WarDayState.get(level.getServer());
+        if (!state.isActive() || state.copiedNexusPos().isEmpty()) {
+            return;
+        }
+        if (!level.dimension().location().toString().equals(state.warDayDimension())) {
+            return;
+        }
+
+        BlockPos nexusPos = state.copiedNexusPos().get();
+        if (!isInMatchBounds(event.getPos(), nexusPos)) {
+            event.setCanceled(true);
+            if (event.getEntity() instanceof ServerPlayer player) {
+                player.displayClientMessage(message(ChatFormatting.RED, "You cannot place blocks outside the War Day bounds."), true);
+            }
+            return;
+        }
+
+        if (isInNexusShell(event.getPos(), nexusPos)) {
+            event.setCanceled(true);
+            if (event.getEntity() instanceof ServerPlayer player) {
+                player.displayClientMessage(message(ChatFormatting.RED, "You cannot place blocks in the nexus shell."), true);
+            }
+            return;
+        }
+
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            event.setCanceled(true);
+            return;
+        }
+
+        Optional<ParticipantRespawn> participant = participantRespawn(player);
+        if (participant.isEmpty() || !event.getPlacedBlock().is(Block.byItem(participant.get().matchBlock()))) {
+            event.setCanceled(true);
+            player.displayClientMessage(message(ChatFormatting.RED, "Only your team blocks can be placed during War Day."), true);
+        }
     }
 
     private static int endActiveWarDay(MinecraftServer server, WarDayState state) {
@@ -578,8 +700,15 @@ public class WarDayCommands {
             }
         }
 
+        if (state.keepInventoryCaptured()) {
+            warDayLevel(server, state).ifPresent(level ->
+                    level.getGameRules().getRule(GameRules.RULE_KEEPINVENTORY).set(state.originalKeepInventory(), server)
+            );
+        }
         state.end();
         PENDING_RESPAWNS.clear();
+        DEATH_COUNTS.clear();
+        DIG_HISTORY.clear();
         return restored;
     }
 
@@ -595,9 +724,9 @@ public class WarDayCommands {
         UUID playerId = player.getUUID();
 
         if (defenderTeam.map(team -> team.getMembers().contains(playerId)).orElse(false)) {
-            ensureInventoryHasAtLeast(player, WarDayMod.NEXUS_ITEM.get(), MATCH_BLOCK_TARGET_COUNT);
+            ensureInventoryHasAtLeast(player, defenderMatchBlock(), MATCH_BLOCK_TARGET_COUNT);
         } else if (attackerTeam.map(team -> team.getMembers().contains(playerId)).orElse(false)) {
-            ensureInventoryHasAtLeast(player, WarDayMod.ATTACKER_SPAWN_ITEM.get(), MATCH_BLOCK_TARGET_COUNT);
+            ensureInventoryHasAtLeast(player, attackerMatchBlock(), MATCH_BLOCK_TARGET_COUNT);
         }
     }
 
@@ -640,6 +769,137 @@ public class WarDayCommands {
         player.setRespawnPosition(level.dimension(), pos, player.getYRot(), true, false);
     }
 
+    private static int respawnDelaySecondsForDeath(int deathCount) {
+        if (deathCount <= 1) {
+            return 0;
+        }
+        if (deathCount == 2) {
+            return 5;
+        }
+        if (deathCount == 3) {
+            return 10;
+        }
+        return 15;
+    }
+
+    private static Item defenderMatchBlock() {
+        return configuredItem(WarDayConfig.DEFENDER_MATCH_BLOCK.get(), Blocks.BLUE_WOOL.asItem());
+    }
+
+    private static Item attackerMatchBlock() {
+        return configuredItem(WarDayConfig.ATTACKER_MATCH_BLOCK.get(), Blocks.RED_WOOL.asItem());
+    }
+
+    private static Item configuredItem(String id, Item fallback) {
+        try {
+            return BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(id)).orElse(fallback);
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private static Optional<ServerLevel> warDayLevel(MinecraftServer server, WarDayState state) {
+        try {
+            ResourceKey<Level> dimension = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(state.warDayDimension()));
+            return Optional.ofNullable(server.getLevel(dimension));
+        } catch (Exception ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static boolean isAttacker(ServerPlayer player) {
+        if (!FTBTeamsAPI.api().isManagerLoaded()) {
+            return false;
+        }
+
+        Optional<Team> attackerTeam = findTeamByConfiguredName(FTBTeamsAPI.api().getManager(), WarDayConfig.TEAM_B_NAME.get());
+        return attackerTeam.map(team -> team.getMembers().contains(player.getUUID())).orElse(false);
+    }
+
+    private static boolean isInMatchBounds(BlockPos pos, BlockPos nexusPos) {
+        int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+        return pos.getX() >= nexusPos.getX() - halfSize
+                && pos.getX() < nexusPos.getX() + halfSize
+                && pos.getZ() >= nexusPos.getZ() - halfSize
+                && pos.getZ() < nexusPos.getZ() + halfSize;
+    }
+
+    private static void trackDiggingPenalty(ServerPlayer player, long gameTime) {
+        int windowTicks = WarDayConfig.DIG_LIMIT_WINDOW_SECONDS.getAsInt() * 20;
+        int limit = WarDayConfig.DIG_LIMIT_BLOCKS.getAsInt();
+        Deque<Long> digs = DIG_HISTORY.computeIfAbsent(player.getUUID(), ignored -> new ArrayDeque<>());
+        while (!digs.isEmpty() && gameTime - digs.peekFirst() > windowTicks) {
+            digs.removeFirst();
+        }
+
+        digs.addLast(gameTime);
+        if (digs.size() <= limit) {
+            return;
+        }
+
+        int durationTicks = WarDayConfig.DIG_PENALTY_SECONDS.getAsInt() * 20;
+        player.addEffect(new MobEffectInstance(MobEffects.GLOWING, durationTicks, 0, false, true, true));
+        player.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN, durationTicks, 0, false, true, true));
+        player.displayClientMessage(message(ChatFormatting.YELLOW, "Digging penalty applied."), true);
+        digs.clear();
+    }
+
+    private static void buildNexusShell(ServerLevel level, BlockPos nexusPos) {
+        clearNexusShell(level, nexusPos);
+
+        BlockState quartz = Blocks.SMOOTH_QUARTZ.defaultBlockState();
+        BlockState quartzSlab = Blocks.SMOOTH_QUARTZ_SLAB.defaultBlockState();
+        BlockState chain = Blocks.CHAIN.defaultBlockState();
+
+        fill(level, nexusPos.offset(-2, -3, -1), nexusPos.offset(2, -3, 1), quartz);
+        fill(level, nexusPos.offset(-1, -2, -1), nexusPos.offset(1, -2, 1), quartzSlab);
+
+        level.setBlock(nexusPos.below(), chain, 3);
+        level.setBlock(nexusPos.above(), chain, 3);
+        level.setBlock(nexusPos.above(2), chain, 3);
+        level.setBlock(nexusPos.above(3), chain, 3);
+
+        level.setBlock(nexusPos, WarDayMod.NEXUS.get().defaultBlockState(), 3);
+
+        fill(level, nexusPos.offset(-2, 4, -2), nexusPos.offset(2, 4, 2), quartzSlab);
+        fill(level, nexusPos.offset(-2, 5, -2), nexusPos.offset(2, 5, 2), quartz);
+    }
+
+    private static void clearNexusShell(ServerLevel level, BlockPos nexusPos) {
+        for (int x = -NEXUS_SHELL_RADIUS_XZ; x <= NEXUS_SHELL_RADIUS_XZ; x++) {
+            for (int y = NEXUS_SHELL_MIN_Y_OFFSET; y <= NEXUS_SHELL_MAX_Y_OFFSET; y++) {
+                for (int z = -NEXUS_SHELL_RADIUS_XZ; z <= NEXUS_SHELL_RADIUS_XZ; z++) {
+                    BlockPos pos = nexusPos.offset(x, y, z);
+                    level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+        }
+    }
+
+    private static void fill(ServerLevel level, BlockPos from, BlockPos to, BlockState state) {
+        BlockPos min = new BlockPos(
+                Math.min(from.getX(), to.getX()),
+                Math.min(from.getY(), to.getY()),
+                Math.min(from.getZ(), to.getZ())
+        );
+        BlockPos max = new BlockPos(
+                Math.max(from.getX(), to.getX()),
+                Math.max(from.getY(), to.getY()),
+                Math.max(from.getZ(), to.getZ())
+        );
+
+        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
+            level.setBlock(pos, state, 3);
+        }
+    }
+
+    private static boolean isInNexusShell(BlockPos pos, BlockPos nexusPos) {
+        return Math.abs(pos.getX() - nexusPos.getX()) <= NEXUS_SHELL_RADIUS_XZ
+                && Math.abs(pos.getZ() - nexusPos.getZ()) <= NEXUS_SHELL_RADIUS_XZ
+                && pos.getY() >= nexusPos.getY() + NEXUS_SHELL_MIN_Y_OFFSET
+                && pos.getY() <= nexusPos.getY() + NEXUS_SHELL_MAX_Y_OFFSET;
+    }
+
     private static Optional<ParticipantRespawn> participantRespawn(ServerPlayer player) {
         MinecraftServer server = player.getServer();
         if (server == null || !FTBTeamsAPI.api().isManagerLoaded()) {
@@ -651,14 +911,8 @@ public class WarDayCommands {
             return Optional.empty();
         }
 
-        ServerLevel warDayLevel;
-        try {
-            ResourceKey<Level> dimension = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(state.warDayDimension()));
-            warDayLevel = server.getLevel(dimension);
-        } catch (Exception ignored) {
-            return Optional.empty();
-        }
-        if (warDayLevel == null) {
+        Optional<ServerLevel> warDayLevel = warDayLevel(server, state);
+        if (warDayLevel.isEmpty()) {
             return Optional.empty();
         }
 
@@ -668,10 +922,10 @@ public class WarDayCommands {
         UUID playerId = player.getUUID();
 
         if (defenderTeam.map(team -> team.getMembers().contains(playerId)).orElse(false) && state.copiedNexusPos().isPresent()) {
-            return Optional.of(new ParticipantRespawn(warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0), WarDayMod.NEXUS_ITEM.get()));
+            return Optional.of(new ParticipantRespawn(warDayLevel.get(), state.copiedNexusPos().get().offset(0, 1, 0), defenderMatchBlock()));
         }
         if (attackerTeam.map(team -> team.getMembers().contains(playerId)).orElse(false) && state.attackerSpawnPos().isPresent()) {
-            return Optional.of(new ParticipantRespawn(warDayLevel, state.attackerSpawnPos().get(), WarDayMod.ATTACKER_SPAWN_ITEM.get()));
+            return Optional.of(new ParticipantRespawn(warDayLevel.get(), state.attackerSpawnPos().get(), attackerMatchBlock()));
         }
 
         return Optional.empty();
