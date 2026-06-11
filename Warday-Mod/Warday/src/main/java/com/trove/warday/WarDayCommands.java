@@ -33,6 +33,9 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.decoration.Painting;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.Item;
@@ -464,14 +467,18 @@ public class WarDayCommands {
             snapshots.put(id, snapshotPlayer(player));
 
             if (defenderIds.contains(id)) {
-                teleportPlayer(player, warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0));
-                setPlayerSpawn(player, warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0));
+                BlockPos spawn = findSafeSpawnNear(warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0), 8, 4)
+                        .orElse(state.copiedNexusPos().get().offset(0, 1, 0));
+                teleportPlayer(player, warDayLevel, spawn);
+                setPlayerSpawn(player, warDayLevel, spawn);
                 player.setGameMode(GameType.SURVIVAL);
                 ensureInventoryHasAtLeast(player, defenderBlock, MATCH_BLOCK_TARGET_COUNT);
                 defenders++;
             } else if (attackerIds.contains(id)) {
-                teleportPlayer(player, warDayLevel, state.attackerSpawnPos().get());
-                setPlayerSpawn(player, warDayLevel, state.attackerSpawnPos().get());
+                BlockPos spawn = findSafeSpawnNear(warDayLevel, state.attackerSpawnPos().get(), 8, 4)
+                        .orElse(state.attackerSpawnPos().get());
+                teleportPlayer(player, warDayLevel, spawn);
+                setPlayerSpawn(player, warDayLevel, spawn);
                 player.setGameMode(GameType.SURVIVAL);
                 ensureInventoryHasAtLeast(player, attackerBlock, MATCH_BLOCK_TARGET_COUNT);
                 attackers++;
@@ -496,6 +503,8 @@ public class WarDayCommands {
         long matchEndGameTime = warDayLevel.getGameTime() + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt() * 20L;
         state.start(
                 snapshots,
+                defenderIds,
+                attackerIds,
                 matchEndGameTime,
                 originalKeepInventory,
                 originalWorldBorderCenterX,
@@ -522,8 +531,10 @@ public class WarDayCommands {
             return;
         }
 
+        WarDayState state = WarDayState.get(player.getServer());
         ParticipantRespawn participant = respawn.get();
-        int deathCount = DEATH_COUNTS.merge(player.getUUID(), 1, Integer::sum);
+        int deathCount = state.incrementDeathCount(player.getUUID());
+        DEATH_COUNTS.put(player.getUUID(), deathCount);
         int delaySeconds = respawnDelaySecondsForDeath(deathCount);
         int delayTicks = delaySeconds * 20;
         if (delayTicks <= 0) {
@@ -532,10 +543,31 @@ public class WarDayCommands {
         }
 
         PENDING_RESPAWNS.put(player.getUUID(), new PendingRespawn(delayTicks, participant));
+        state.setPendingRespawnTicks(player.getUUID(), delayTicks);
         player.setGameMode(GameType.SPECTATOR);
         teleportPlayer(player, participant.level(), participant.spawnPos().offset(0, 11, 0));
         player.sendSystemMessage(message(ChatFormatting.YELLOW,
                 "Respawning in " + delaySeconds + " seconds."));
+    }
+
+    @SubscribeEvent
+    public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+
+        WarDayState state = WarDayState.get(player.getServer());
+        if (state.isActive()) {
+            state.savePlayerIfAbsent(player.getUUID(), snapshotPlayer(player));
+            applyActiveMatchRole(player, state);
+            return;
+        }
+
+        state.savedPlayer(player.getUUID()).ifPresent(snapshot -> {
+            restorePlayer(player.getServer(), player, snapshot);
+            state.removeSavedPlayer(player.getUUID());
+            player.sendSystemMessage(message(ChatFormatting.YELLOW, "Your pre-War Day location and game mode were restored."));
+        });
     }
 
     @SubscribeEvent
@@ -559,6 +591,22 @@ public class WarDayCommands {
             return;
         }
 
+        for (Map.Entry<UUID, Integer> entry : state.pendingRespawns().entrySet()) {
+            if (PENDING_RESPAWNS.containsKey(entry.getKey())) {
+                continue;
+            }
+
+            ServerPlayer player = event.getServer().getPlayerList().getPlayer(entry.getKey());
+            if (player == null) {
+                continue;
+            }
+
+            Optional<ParticipantRespawn> respawn = participantRespawn(player);
+            respawn.ifPresent(participant ->
+                    PENDING_RESPAWNS.put(entry.getKey(), new PendingRespawn(entry.getValue(), participant))
+            );
+        }
+
         if (PENDING_RESPAWNS.isEmpty()) {
             return;
         }
@@ -575,12 +623,14 @@ public class WarDayCommands {
             PendingRespawn pending = entry.getValue().tick();
             if (pending.ticksRemaining() > 0) {
                 entry.setValue(pending);
+                state.setPendingRespawnTicks(player.getUUID(), pending.ticksRemaining());
                 teleportPlayer(player, pending.participant().level(), pending.participant().spawnPos().offset(0, 11, 0));
                 continue;
             }
 
             Optional<ParticipantRespawn> currentRespawn = participantRespawn(player);
             restoreDelayedRespawn(player, currentRespawn.orElse(pending.participant()));
+            state.removePendingRespawn(player.getUUID());
             iterator.remove();
         }
     }
@@ -718,6 +768,25 @@ public class WarDayCommands {
         event.getAffectedBlocks().removeIf(pos -> isInNexusShell(pos, nexusPos));
     }
 
+    @SubscribeEvent
+    public void onFluidPlaceBlock(BlockEvent.FluidPlaceBlockEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+
+        WarDayState state = WarDayState.get(level.getServer());
+        if (!state.isActive() || state.copiedNexusPos().isEmpty()) {
+            return;
+        }
+        if (!level.dimension().location().toString().equals(state.warDayDimension())) {
+            return;
+        }
+
+        if (isInNexusShell(event.getPos(), state.copiedNexusPos().get())) {
+            event.setCanceled(true);
+        }
+    }
+
     private static int endActiveWarDay(MinecraftServer server, WarDayState state) {
         int restored = 0;
         Map<UUID, WarDayState.PlayerSnapshot> snapshots = state.savedPlayers();
@@ -725,6 +794,7 @@ public class WarDayCommands {
             WarDayState.PlayerSnapshot snapshot = snapshots.get(player.getUUID());
             if (snapshot != null) {
                 restorePlayer(server, player, snapshot);
+                state.removeSavedPlayer(player.getUUID());
                 restored++;
             }
         }
@@ -735,6 +805,7 @@ public class WarDayCommands {
             );
         }
         warDayLevel(server, state).ifPresent(level -> {
+            clearTransientMatchEntities(level, state);
             restoreWorldBorder(level, state);
             removeNexusMarker(level, state);
         });
@@ -763,6 +834,36 @@ public class WarDayCommands {
         }
     }
 
+    private static void applyActiveMatchRole(ServerPlayer player, WarDayState state) {
+        Optional<ParticipantRespawn> participant = participantRespawn(player);
+        if (participant.isPresent()) {
+            ParticipantRespawn respawn = participant.get();
+            Optional<Integer> pendingTicks = state.pendingRespawnTicks(player.getUUID());
+            if (pendingTicks.isPresent() && pendingTicks.get() > 0) {
+                PENDING_RESPAWNS.put(player.getUUID(), new PendingRespawn(pendingTicks.get(), respawn));
+                player.setGameMode(GameType.SPECTATOR);
+                teleportPlayer(player, respawn.level(), respawn.spawnPos().offset(0, 11, 0));
+                player.sendSystemMessage(message(ChatFormatting.YELLOW,
+                        "War Day is active. Respawning in " + Math.max(1, pendingTicks.get() / 20) + " seconds."));
+                return;
+            }
+
+            restoreDelayedRespawn(player, respawn);
+            player.sendSystemMessage(message(ChatFormatting.GREEN, "War Day is active. You have been moved to your team spawn."));
+            return;
+        }
+
+        warDayLevel(player.getServer(), state).ifPresent(level -> {
+            BlockPos spectatorPos = state.attackerSpawnPos()
+                    .or(() -> state.copiedNexusPos())
+                    .orElse(BlockPos.ZERO)
+                    .offset(0, 11, 0);
+            player.setGameMode(GameType.SPECTATOR);
+            teleportPlayer(player, level, spectatorPos);
+            player.sendSystemMessage(message(ChatFormatting.YELLOW, "War Day is active. You are spectating this match."));
+        });
+    }
+
     private static void ensureInventoryHasAtLeast(ServerPlayer player, Item item, int targetCount) {
         int currentCount = player.getInventory().countItem(item);
         if (currentCount >= targetCount) {
@@ -773,6 +874,7 @@ public class WarDayCommands {
     }
 
     private static WarDayState.PlayerSnapshot snapshotPlayer(ServerPlayer player) {
+        BlockPos respawnPos = player.getRespawnPosition();
         return new WarDayState.PlayerSnapshot(
                 player.gameMode.getGameModeForPlayer(),
                 player.level().dimension().location().toString(),
@@ -780,7 +882,14 @@ public class WarDayCommands {
                 player.getY(),
                 player.getZ(),
                 player.getYRot(),
-                player.getXRot()
+                player.getXRot(),
+                player.getRespawnDimension().location().toString(),
+                respawnPos != null,
+                respawnPos == null ? 0 : respawnPos.getX(),
+                respawnPos == null ? 0 : respawnPos.getY(),
+                respawnPos == null ? 0 : respawnPos.getZ(),
+                player.getRespawnAngle(),
+                player.isRespawnForced()
         );
     }
 
@@ -791,11 +900,29 @@ public class WarDayCommands {
                 player.teleportTo(restoreLevel, snapshot.x(), snapshot.y(), snapshot.z(), Set.of(), snapshot.yRot(), snapshot.xRot());
             }
         }
+        restorePlayerRespawn(player, snapshot);
         player.setGameMode(snapshot.gameMode());
+    }
+
+    private static void restorePlayerRespawn(ServerPlayer player, WarDayState.PlayerSnapshot snapshot) {
+        ResourceKey<Level> respawnDimension = Level.OVERWORLD;
+        if (!snapshot.respawnDimension().isBlank()) {
+            respawnDimension = ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(snapshot.respawnDimension()));
+        }
+
+        BlockPos respawnPos = snapshot.hasRespawnPosition()
+                ? new BlockPos(snapshot.respawnX(), snapshot.respawnY(), snapshot.respawnZ())
+                : null;
+        player.setRespawnPosition(respawnDimension, respawnPos, snapshot.respawnAngle(), snapshot.respawnForced(), false);
     }
 
     private static void teleportPlayer(ServerPlayer player, ServerLevel level, BlockPos pos) {
         player.teleportTo(level, pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, Set.of(), player.getYRot(), player.getXRot());
+    }
+
+    private static void teleportPlayerSafely(ServerPlayer player, ServerLevel level, BlockPos preferred) {
+        BlockPos target = findSafeSpawnNear(level, preferred, 8, 4).orElse(preferred);
+        teleportPlayer(player, level, target);
     }
 
     private static void setPlayerSpawn(ServerPlayer player, ServerLevel level, BlockPos pos) {
@@ -853,6 +980,33 @@ public class WarDayCommands {
 
         level.getWorldBorder().setCenter(state.originalWorldBorderCenterX(), state.originalWorldBorderCenterZ());
         level.getWorldBorder().setSize(state.originalWorldBorderSize());
+    }
+
+    private static void clearTransientMatchEntities(ServerLevel level, WarDayState state) {
+        if (state.copiedNexusPos().isEmpty()) {
+            return;
+        }
+
+        BlockPos nexusPos = state.copiedNexusPos().get();
+        int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+        AABB bounds = new AABB(
+                nexusPos.getX() - halfSize,
+                level.getMinBuildHeight(),
+                nexusPos.getZ() - halfSize,
+                nexusPos.getX() + halfSize,
+                level.getMaxBuildHeight(),
+                nexusPos.getZ() + halfSize
+        );
+
+        for (Entity entity : level.getEntities((Entity) null, bounds, WarDayCommands::isTransientMatchEntity)) {
+            entity.discard();
+        }
+    }
+
+    private static boolean isTransientMatchEntity(Entity entity) {
+        return entity instanceof ItemEntity
+                || entity instanceof ExperienceOrb
+                || entity instanceof Projectile;
     }
 
     private static void spawnNexusMarker(ServerLevel level, WarDayState state, BlockPos nexusPos) {
@@ -997,10 +1151,15 @@ public class WarDayCommands {
         Optional<Team> attackerTeam = findTeamByConfiguredName(teamManager, WarDayConfig.TEAM_B_NAME.get());
         UUID playerId = player.getUUID();
 
-        if (defenderTeam.map(team -> team.getMembers().contains(playerId)).orElse(false) && state.copiedNexusPos().isPresent()) {
+        boolean defender = state.isDefenderParticipant(playerId)
+                || defenderTeam.map(team -> team.getMembers().contains(playerId)).orElse(false);
+        boolean attacker = state.isAttackerParticipant(playerId)
+                || attackerTeam.map(team -> team.getMembers().contains(playerId)).orElse(false);
+
+        if (defender && state.copiedNexusPos().isPresent()) {
             return Optional.of(new ParticipantRespawn(warDayLevel.get(), state.copiedNexusPos().get().offset(0, 1, 0), defenderMatchBlock()));
         }
-        if (attackerTeam.map(team -> team.getMembers().contains(playerId)).orElse(false) && state.attackerSpawnPos().isPresent()) {
+        if (attacker && state.attackerSpawnPos().isPresent()) {
             return Optional.of(new ParticipantRespawn(warDayLevel.get(), state.attackerSpawnPos().get(), attackerMatchBlock()));
         }
 
@@ -1008,8 +1167,8 @@ public class WarDayCommands {
     }
 
     private static void restoreDelayedRespawn(ServerPlayer player, ParticipantRespawn respawn) {
-        teleportPlayer(player, respawn.level(), respawn.spawnPos());
-        setPlayerSpawn(player, respawn.level(), respawn.spawnPos());
+        teleportPlayerSafely(player, respawn.level(), respawn.spawnPos());
+        setPlayerSpawn(player, respawn.level(), findSafeSpawnNear(respawn.level(), respawn.spawnPos(), 8, 4).orElse(respawn.spawnPos()));
         player.setGameMode(GameType.SURVIVAL);
         ensureInventoryHasAtLeast(player, respawn.matchBlock(), MATCH_BLOCK_TARGET_COUNT);
     }
@@ -1467,6 +1626,33 @@ public class WarDayCommands {
             for (int y = minY; y <= maxY; y++) {
                 for (int x = minX; x <= maxX; x++) {
                     for (int z = minZ; z <= maxZ; z++) {
+                        if (Math.max(Math.abs(x - preferred.getX()), Math.abs(z - preferred.getZ())) != distance) {
+                            continue;
+                        }
+
+                        BlockPos candidate = new BlockPos(x, y, z);
+                        if (isSafeSpawnPos(level, candidate)) {
+                            return Optional.of(candidate);
+                        }
+                    }
+                }
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private static Optional<BlockPos> findSafeSpawnNear(ServerLevel level, BlockPos preferred, int horizontalRadius, int verticalRadius) {
+        if (isSafeSpawnPos(level, preferred)) {
+            return Optional.of(preferred);
+        }
+
+        int minY = Math.max(level.getMinBuildHeight() + 1, preferred.getY() - verticalRadius);
+        int maxY = Math.min(level.getMaxBuildHeight() - 2, preferred.getY() + verticalRadius);
+        for (int distance = 1; distance <= horizontalRadius; distance++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int x = preferred.getX() - distance; x <= preferred.getX() + distance; x++) {
+                    for (int z = preferred.getZ() - distance; z <= preferred.getZ() + distance; z++) {
                         if (Math.max(Math.abs(x - preferred.getX()), Math.abs(z - preferred.getZ())) != distance) {
                             continue;
                         }
