@@ -202,7 +202,8 @@ public class WarDayCommands {
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "Copied defender base rotates around its nexus so the forward marker faces the attacker side."), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
-                "Scanning " + context.radius() + " blocks around " + context.level().dimension().location() + " " + formatPos(context.center())), false);
+                "Scanning loaded configured-team claims within " + context.radius() + " blocks around "
+                        + context.level().dimension().location() + " " + formatPos(context.center())), false);
 
         reportBlocks(source, "nexus", context.nexuses());
         reportBlocks(source, "forward marker", context.forwardMarkers());
@@ -237,7 +238,8 @@ public class WarDayCommands {
                 "War Day scan for defender " + context.teamA().getName().getString()
                         + context.teamB().map(team -> " vs attacker " + team.getName().getString()).orElse(" one-team test")), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
-                "Scanning " + context.radius() + " blocks around " + context.level().dimension().location() + " " + formatPos(context.center())), false);
+                "Scanning loaded configured-team claims within " + context.radius() + " blocks around "
+                        + context.level().dimension().location() + " " + formatPos(context.center())), false);
 
         TeamValidation teamAValidation = validateTeamMarkers(context.teamA(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
         Optional<AttackerValidation> attackerValidation = context.teamB().map(team -> validateAttackerSpawn(team, context.attackerSpawns()));
@@ -321,15 +323,18 @@ public class WarDayCommands {
         }
 
         if (!teamACheck.passed() || (attackerCheck != null && !attackerCheck.passed())) {
-            source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Destination conflicts found; wiping computed War Day destination areas before paste."), true);
+            source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                    "Destination conflicts found; clearing transformed claimed areas before paste."), true);
         }
 
-        int teamAWiped = wipeDestinationArea(targetLevel, teamAPlan);
-        source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Wiped " + teamAWiped + " defender destination blocks from War Day target area."), true);
-        attackerPlan.ifPresent(plan -> {
-            int attackerWiped = wipeDestinationArea(targetLevel, plan);
-            source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Wiped " + attackerWiped + " attacker destination blocks from War Day target area."), true);
-        });
+        int teamAWiped = wipeDestinationArea(defenderSourceLevel, targetLevel, teamAPlan);
+        source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                "Cleared " + teamAWiped + " defender destination blocks from transformed claimed chunks."), true);
+        if (attackerPlan.isPresent()) {
+            int attackerWiped = wipeDestinationArea(attackerSourceLevel, targetLevel, attackerPlan.get());
+            source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                    "Cleared " + attackerWiped + " attacker destination blocks from transformed claimed chunks."), true);
+        }
 
         CopyResult teamAResult = copyBase(defenderSourceLevel, targetLevel, teamAPlan);
         EntityCopyResult teamAEntityResult = copyDecorativeEntities(defenderSourceLevel, targetLevel, teamAPlan);
@@ -1238,7 +1243,10 @@ public class WarDayCommands {
         ServerLevel level = source.getLevel();
         BlockPos center = BlockPos.containing(source.getPosition());
         int radius = WarDayConfig.VALIDATION_RADIUS_BLOCKS.getAsInt();
-        scanArea(level, center, radius, chunkManager, nexuses, forwardMarkers, attackerSpawns);
+        List<Team> scanTeams = new ArrayList<>();
+        scanTeams.add(teamA.get());
+        teamB.ifPresent(scanTeams::add);
+        scanArea(level, center, radius, chunkManager, scanTeams, nexuses, forwardMarkers, attackerSpawns);
 
         return Optional.of(new ScanContext(level, center, radius, chunkManager, teamA.get(), teamB, nexuses, forwardMarkers, attackerSpawns));
     }
@@ -1264,33 +1272,87 @@ public class WarDayCommands {
             BlockPos center,
             int radius,
             ClaimedChunkManager chunkManager,
+            Collection<Team> scanTeams,
             List<LocatedBlock> nexuses,
             List<LocatedBlock> forwardMarkers,
             List<AttackerSpawn> attackerSpawns
     ) {
-        BlockPos min = new BlockPos(center.getX() - radius, level.getMinBuildHeight(), center.getZ() - radius);
-        BlockPos max = new BlockPos(center.getX() + radius, level.getMaxBuildHeight() - 1, center.getZ() + radius);
+        int minBlockX = center.getX() - radius;
+        int maxBlockX = center.getX() + radius;
+        int minBlockZ = center.getZ() - radius;
+        int maxBlockZ = center.getZ() + radius;
+        int minChunkX = Math.floorDiv(minBlockX, 16);
+        int maxChunkX = Math.floorDiv(maxBlockX, 16);
+        int minChunkZ = Math.floorDiv(minBlockZ, 16);
+        int maxChunkZ = Math.floorDiv(maxBlockZ, 16);
 
-        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
-            if (!level.hasChunkAt(pos)) {
-                continue;
-            }
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                if (!level.hasChunk(chunkX, chunkZ)) {
+                    continue;
+                }
 
-            BlockState state = level.getBlockState(pos);
-            if (state.is(WarDayMod.NEXUS.get())) {
-                nexuses.add(new LocatedBlock(level.dimension(), pos.immutable(), null, getClaimOwner(chunkManager, level, pos)));
-            } else if (state.is(WarDayMod.FORWARD_MARKER.get())) {
-                Direction facing = state.getValue(ForwardMarkerBlock.FACING);
-                forwardMarkers.add(new LocatedBlock(level.dimension(), pos.immutable(), facing, getClaimOwner(chunkManager, level, pos)));
-            } else if (state.is(WarDayMod.ATTACKER_SPAWN.get())) {
-                attackerSpawns.add(new AttackerSpawn(level.dimension(), pos.immutable(), getClaimOwner(chunkManager, level, pos)));
+                ClaimedChunk claimedChunk = chunkManager.getChunk(
+                        new ChunkDimPos(level.dimension(), new ChunkPos(chunkX, chunkZ))
+                );
+                if (claimedChunk == null) {
+                    continue;
+                }
+
+                Team owner = claimedChunk.getTeamData().getTeam();
+                boolean relevantOwner = scanTeams.stream().anyMatch(team -> team.getId().equals(owner.getId()));
+                if (!relevantOwner) {
+                    continue;
+                }
+
+                int chunkMinX = Math.max(minBlockX, chunkX * 16);
+                int chunkMaxX = Math.min(maxBlockX, chunkX * 16 + 15);
+                int chunkMinZ = Math.max(minBlockZ, chunkZ * 16);
+                int chunkMaxZ = Math.min(maxBlockZ, chunkZ * 16 + 15);
+                scanClaimedChunk(
+                        level,
+                        owner,
+                        chunkMinX,
+                        chunkMaxX,
+                        chunkMinZ,
+                        chunkMaxZ,
+                        nexuses,
+                        forwardMarkers,
+                        attackerSpawns
+                );
             }
         }
     }
 
-    private static Optional<Team> getClaimOwner(ClaimedChunkManager chunkManager, ServerLevel level, BlockPos pos) {
-        ClaimedChunk chunk = chunkManager.getChunk(new ChunkDimPos(level.dimension(), new ChunkPos(pos)));
-        return chunk == null ? Optional.empty() : Optional.of(chunk.getTeamData().getTeam());
+    private static void scanClaimedChunk(
+            ServerLevel level,
+            Team owner,
+            int minX,
+            int maxX,
+            int minZ,
+            int maxZ,
+            List<LocatedBlock> nexuses,
+            List<LocatedBlock> forwardMarkers,
+            List<AttackerSpawn> attackerSpawns
+    ) {
+        Optional<Team> claimedOwner = Optional.of(owner);
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                for (int y = level.getMinBuildHeight(); y < level.getMaxBuildHeight(); y++) {
+                    pos.set(x, y, z);
+                    BlockState state = level.getBlockState(pos);
+                    if (state.is(WarDayMod.NEXUS.get())) {
+                        nexuses.add(new LocatedBlock(level.dimension(), pos.immutable(), null, claimedOwner));
+                    } else if (state.is(WarDayMod.FORWARD_MARKER.get())) {
+                        Direction facing = state.getValue(ForwardMarkerBlock.FACING);
+                        forwardMarkers.add(new LocatedBlock(level.dimension(), pos.immutable(), facing, claimedOwner));
+                    } else if (state.is(WarDayMod.ATTACKER_SPAWN.get())) {
+                        attackerSpawns.add(new AttackerSpawn(level.dimension(), pos.immutable(), claimedOwner));
+                    }
+                }
+            }
+        }
     }
 
     private static TeamValidation validateTeamMarkers(
@@ -1550,15 +1612,23 @@ public class WarDayCommands {
         return new CopyResult(blocksCopied, blockEntitiesCopied, containersCleared);
     }
 
-    private static int wipeDestinationArea(ServerLevel targetLevel, PlacementPlan plan) {
+    private static int wipeDestinationArea(ServerLevel sourceLevel, ServerLevel targetLevel, PlacementPlan plan) {
         int wiped = 0;
-        for (int x = plan.targetMinX(); x <= plan.targetMaxX(); x++) {
-            for (int z = plan.targetMinZ(); z <= plan.targetMaxZ(); z++) {
-                for (int y = targetLevel.getMinBuildHeight(); y < targetLevel.getMaxBuildHeight(); y++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    if (!targetLevel.getBlockState(pos).isAir()) {
-                        targetLevel.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
-                        wiped++;
+        for (ChunkDimPos chunk : plan.cluster()) {
+            int minX = chunk.x() * 16;
+            int minZ = chunk.z() * 16;
+            for (int x = minX; x < minX + 16; x++) {
+                for (int z = minZ; z < minZ + 16; z++) {
+                    for (int y = sourceLevel.getMinBuildHeight(); y < sourceLevel.getMaxBuildHeight(); y++) {
+                        BlockPos targetPos = plan.targetPos(new BlockPos(x, y, z));
+                        if (targetPos.getY() < targetLevel.getMinBuildHeight()
+                                || targetPos.getY() >= targetLevel.getMaxBuildHeight()) {
+                            continue;
+                        }
+                        if (!targetLevel.getBlockState(targetPos).isAir()) {
+                            targetLevel.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3);
+                            wiped++;
+                        }
                     }
                 }
             }

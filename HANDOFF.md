@@ -28,6 +28,9 @@
 - `WarDayState` persists prepared state, active state, copied nexus position, attacker spawn position, configured dimension, team labels, and player snapshots in Minecraft `SavedData`.
 - Nexus destruction in the active War Day dimension ends the event and restores online players.
 - Respawn handling exists for active participants: players briefly enter spectator mode, are teleported above their spawn, then restored after `respawnDelaySeconds`.
+- Active-match lifecycle edge cases have been implemented, including login handling during an active match, deferred restoration after the match, persisted pending respawn/death state, and active-role reassignment.
+- `/warday validate` and `/warday scan` now narrow marker scanning to loaded claimed chunks owned by the configured teams within the validation radius instead of walking the entire full-height radius volume.
+- `/warday prepare confirm` now clears only positions mapped from the actual source claim cluster before paste. It no longer wipes unclaimed holes inside the cluster's rectangular bounding footprint.
 - The Fortifications mod registers a synced `fortifications:unarmed_damage` player attribute and has a global `FortificationsMod.GLOBAL_ACTIVE` flag.
 - `FortificationBlockRules` excludes Warday setup blocks from Fortifications hardening so admin/event marker blocks are not accidentally fortified.
 - Recipe/loot datapack overrides exist under the Fortifications mod resources for several third-party mods, including `artifacts`, `relics`, `alexscaves`, and `sophisticatedbackpacks`.
@@ -37,6 +40,7 @@
 
 - Recent active work is in `Warday-Mod/Warday/src/main/java/com/trove/warday/WarDayCommands.java`.
 - Defender base rotation has been implemented at source level but has not been compiled or play-tested yet in this Codex shell.
+- Claim-scoped marker scanning and transformed claim-shape destination clearing have been implemented at source level but remain uncompiled in this shell.
 - Verification was blocked because:
   - `gradle build` from `Warday-Mod/Warday` failed because `gradle` is not on PATH.
   - Reusing the Fortifications Gradle wrapper with `-p Warday-Mod/Warday build` failed because `JAVA_HOME` is not set and `java` is not on PATH.
@@ -52,8 +56,7 @@
   - Only decorative entities `Painting` and `ItemFrame` are copied.
   - Item frames are copied but their items are cleared.
   - Containers are copied structurally but their contents are cleared.
-  - Only online players are snapshotted/restored when `/warday start` and `/warday end` run.
-  - Prepared/copied War Day areas are wiped with broad full-height block clearing before paste.
+  - Prepared/copied War Day claim shapes are cleared over the source dimension's mapped vertical range before paste.
   - Team B can be absent for validation/prepare one-team testing, but `/warday start` requires both configured teams.
 - I could not obtain `git status` because `git` is not available in the PowerShell environment used by Codex. Dirty/untracked files should be checked manually from a developer shell with Git installed.
 
@@ -70,7 +73,7 @@
    - run `/warday validate`, `/warday prepare`, and `/warday prepare confirm`,
    - confirm the copied defender marker/base faces east toward the attacker side.
 4. Manually play-test the full Warday flow: run `/warday start`, break the copied nexus, and confirm restoration.
-5. Harden active-match edge cases: offline player restoration, players joining during an active match, dimension unload/reload behavior, and respawn behavior if prepared positions become invalid.
+5. Add focused automated tests for rotation mapping, rotated footprints, and claim-scoped destination clearing.
 
 # 2. Architectural Decisions & Patterns
 
@@ -101,8 +104,9 @@
 - Attacker validation requires exactly one owned attacker spawn marker.
 - Guardrails check connected cluster size and footprint width/depth against config values before preparation.
 - Copy preparation computes a source cluster bounding box, an anchor offset from source min, rotation from defender forward marker facing to east, and target coordinates. It preserves vertical coordinates relative to the source anchor and target Y.
+- Marker validation iterates chunk coordinates in the configured radius, rejects unloaded/unclaimed chunks and claims owned by unrelated teams, then scans only relevant claimed chunks for setup blocks.
 - Destination checking scans all non-air source blocks and detects whether rotated target positions are already occupied.
-- Destination wiping clears every non-air block in the computed rotated destination footprint across the target dimension's full build height.
+- Destination clearing walks source claim chunks and transforms each source position through `PlacementPlan`, preserving irregular cluster shapes and rotation while clearing only mapped target positions within target build bounds.
 - Safe attacker spawn selection first tries one block above the target anchor, then searches nearby positions for solid ground and two collision-free/fluid-free player spaces.
 - Respawn delay uses a per-tick countdown map keyed by player UUID and restores survival/game spawn when the delay expires.
 
@@ -143,15 +147,12 @@
   - Attacker target anchor is `[baseSpacingBlocks, warDayBaseY, 0]`.
   - Spectators/respawning players are placed 11 blocks above spawn.
   - Safe spawn search radius is 8 blocks horizontally and 4 blocks vertically.
-- `/warday validate` and `/warday scan` only scan a cube/cylinder-like block area around the command source using `validationRadiusBlocks`; they do not globally scan all claims.
-- `scanArea` loops over every block position in the configured radius across the full build height. At the default 512-block radius this is potentially very expensive.
-- Destination wiping is destructive within the computed target footprint and full build height. It is intentional for repeatable prepare runs, but risky if the target dimension contains anything important.
+- `/warday validate` and `/warday scan` remain radius-limited and inspect only loaded claims belonging to configured teams. Markers outside the radius, in unloaded chunks, or in unclaimed chunks are not reported.
+- Destination clearing remains destructive inside transformed source claim chunks over the source dimension's mapped vertical range. It is intentional for repeatable prepare runs, so the configured War Day target dimension should remain dedicated to generated match areas.
 - Container contents are intentionally cleared after copy. That avoids giving duplicated loot/resources, but it may surprise players if their defensive build depends on filled containers.
 - Item frames are copied but cleared. This avoids duplicating items, but visual signage/maps/items in frames will not survive the copy.
 - Only `Painting` and `ItemFrame` decorative entities are copied. Armor stands, display entities, mobs, boats, minecarts, and modded decorative entities are ignored.
-- Active-match restore only handles online players captured at `/warday start`. Offline players, players who disconnect mid-match, and players who join mid-match need explicit policy.
-- Saved respawn positions are overwritten during `/warday start` and delayed respawn, but original bed/spawn information is not snapshotted/restored in `WarDayState.PlayerSnapshot`.
-- `PENDING_RESPAWNS` is static runtime state and is lost on server restart. A restart during an active match may leave delayed respawns unresolved.
+- Active-match login, reconnect, deferred restoration, and pending-respawn state handling have been implemented. These paths still need full multiplayer/server-restart play-testing.
 - There is no explicit security model beyond command permission level 2. Operators can wipe/paste target areas with `/warday prepare confirm`.
 - There are no automated tests for the custom Warday validation/copy/lifecycle logic.
 - Git status could not be checked from this environment because Git was not installed on PATH.
