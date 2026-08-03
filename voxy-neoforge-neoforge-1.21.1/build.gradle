@@ -348,9 +348,16 @@ repositories {
 // Configuration to download LWJGL natives for repackaging
 configurations {
     lwjglNativesRaw
+    lwjglBindingsRaw {
+        transitive = false
+    }
 }
 
 dependencies {
+    // Repackaged directly into Voxy so NeoForge does not treat these as JPMS modules.
+    lwjglBindingsRaw "org.lwjgl:lwjgl-lmdb:$lwjglVersion"
+    lwjglBindingsRaw "org.lwjgl:lwjgl-zstd:$lwjglVersion"
+
     // Download natives for repackaging (module-info.class will be stripped)
     lwjglNativesRaw "org.lwjgl:lwjgl-lmdb:$lwjglVersion:natives-windows"
     lwjglNativesRaw "org.lwjgl:lwjgl-zstd:$lwjglVersion:natives-windows"
@@ -405,6 +412,12 @@ tasks.register('extractLwjglNatives') {
 tasks.named('jar') {
     dependsOn 'extractLwjglNatives'
 
+    from({ configurations.lwjglBindingsRaw.collect { zipTree(it) } }) {
+        exclude 'META-INF/MANIFEST.MF'
+        exclude 'META-INF/INDEX.LIST'
+        exclude 'META-INF/versions/**/module-info.class'
+    }
+
     from(extractedNativesDir) {
         // Natives at JAR root for LWJGL to find
         into ''
@@ -417,17 +430,12 @@ dependencies {
     // LWJGL core - provided by Minecraft
     implementation "org.lwjgl:lwjgl"
 
-    // LWJGL-LMDB and LWJGL-ZSTD - Required by Voxy, NOT provided by Minecraft
+    // LWJGL-LMDB and LWJGL-ZSTD - Required by Voxy, NOT provided by Minecraft.
+    // Their classes are flattened into the Voxy JAR above. JarJar would load their
+    // JPMS descriptors before Minecraft's LWJGL core module is visible and abort startup.
     // Reference: https://docs.neoforged.net/toolchain/docs/dependencies/nonmclibs/
-    //
-    // The natives JARs originally have module-info.class with "requires org.lwjgl.zstd"
-    // which causes JPMS conflict. We repackage them without module-info.class above.
-    jarJar(implementation("org.lwjgl:lwjgl-lmdb:$lwjglVersion")) {
-        version { strictly "[3.3.0,4.0.0)"; prefer "$lwjglVersion" }
-    }
-    jarJar(implementation("org.lwjgl:lwjgl-zstd:$lwjglVersion")) {
-        version { strictly "[3.3.0,4.0.0)"; prefer "$lwjglVersion" }
-    }
+    implementation "org.lwjgl:lwjgl-lmdb:$lwjglVersion"
+    implementation "org.lwjgl:lwjgl-zstd:$lwjglVersion"
     // Add to runtime classpath for MC 1.21.1 (not needed for 1.21.9+)
     additionalRuntimeClasspath "org.lwjgl:lwjgl-lmdb:$lwjglVersion"
     additionalRuntimeClasspath "org.lwjgl:lwjgl-zstd:$lwjglVersion"

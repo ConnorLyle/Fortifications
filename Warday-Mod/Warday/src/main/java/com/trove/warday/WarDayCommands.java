@@ -78,6 +78,7 @@ public class WarDayCommands {
     private static final int NEXUS_SHELL_RADIUS_XZ = 3;
     private static final int NEXUS_SHELL_MIN_Y_OFFSET = -3;
     private static final int NEXUS_SHELL_MAX_Y_OFFSET = 5;
+    private static final int MATCH_BORDER_SPAWN_MARGIN = 16;
     private static final SuggestionProvider<CommandSourceStack> TEAM_NAME_SUGGESTIONS = WarDayCommands::suggestTeamNames;
     private static final Map<UUID, PendingRespawn> PENDING_RESPAWNS = new HashMap<>();
     private static final Map<UUID, Integer> DEATH_COUNTS = new HashMap<>();
@@ -458,6 +459,25 @@ public class WarDayCommands {
             return 0;
         }
 
+        BlockPos copiedNexusPos = state.copiedNexusPos().get();
+        Optional<BlockPos> defenderSpawn = findSafeSpawnNear(warDayLevel, copiedNexusPos.offset(0, 1, 0), 8, 4);
+        Optional<BlockPos> attackerSpawn = findSafeSpawnNear(warDayLevel, state.attackerSpawnPos().get(), 8, 4);
+        if (defenderSpawn.isEmpty()) {
+            source.sendFailure(message(ChatFormatting.RED,
+                    "No safe defender spawn exists near the copied nexus. Repair the platform and rerun /warday prepare confirm."));
+            return 0;
+        }
+        if (attackerSpawn.isEmpty()) {
+            source.sendFailure(message(ChatFormatting.RED,
+                    "No safe attacker spawn exists. Repair the platform and rerun /warday prepare confirm."));
+            return 0;
+        }
+        if (!isInsideConfiguredMatchBorder(copiedNexusPos, attackerSpawn.get())) {
+            source.sendFailure(message(ChatFormatting.RED,
+                    "The prepared attacker spawn is outside the configured match border. Rerun /warday prepare confirm with this updated mod before starting."));
+            return 0;
+        }
+
         Map<UUID, WarDayState.PlayerSnapshot> snapshots = new HashMap<>();
         int defenders = 0;
         int attackers = 0;
@@ -472,16 +492,14 @@ public class WarDayCommands {
             snapshots.put(id, snapshotPlayer(player));
 
             if (defenderIds.contains(id)) {
-                BlockPos spawn = findSafeSpawnNear(warDayLevel, state.copiedNexusPos().get().offset(0, 1, 0), 8, 4)
-                        .orElse(state.copiedNexusPos().get().offset(0, 1, 0));
+                BlockPos spawn = defenderSpawn.get();
                 teleportPlayer(player, warDayLevel, spawn);
                 setPlayerSpawn(player, warDayLevel, spawn);
                 player.setGameMode(GameType.SURVIVAL);
                 ensureInventoryHasAtLeast(player, defenderBlock, MATCH_BLOCK_TARGET_COUNT);
                 defenders++;
             } else if (attackerIds.contains(id)) {
-                BlockPos spawn = findSafeSpawnNear(warDayLevel, state.attackerSpawnPos().get(), 8, 4)
-                        .orElse(state.attackerSpawnPos().get());
+                BlockPos spawn = attackerSpawn.get();
                 teleportPlayer(player, warDayLevel, spawn);
                 setPlayerSpawn(player, warDayLevel, spawn);
                 player.setGameMode(GameType.SURVIVAL);
@@ -489,7 +507,7 @@ public class WarDayCommands {
                 attackers++;
             } else {
                 player.setGameMode(GameType.SPECTATOR);
-                teleportPlayer(player, warDayLevel, state.attackerSpawnPos().get().offset(0, 11, 0));
+                teleportPlayer(player, warDayLevel, attackerSpawn.get().offset(0, 11, 0));
                 spectators++;
             }
         }
@@ -976,6 +994,12 @@ public class WarDayCommands {
         double size = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2.0D;
         level.getWorldBorder().setCenter(nexusPos.getX() + 0.5D, nexusPos.getZ() + 0.5D);
         level.getWorldBorder().setSize(size);
+    }
+
+    private static boolean isInsideConfiguredMatchBorder(BlockPos nexusPos, BlockPos pos) {
+        int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+        return Math.abs(pos.getX() - nexusPos.getX()) < halfSize
+                && Math.abs(pos.getZ() - nexusPos.getZ()) < halfSize;
     }
 
     private static void restoreWorldBorder(ServerLevel level, WarDayState state) {
@@ -1965,9 +1989,16 @@ public class WarDayCommands {
                     area.spawn().pos(),
                     area.cluster(),
                     area.bounds(),
-                    new BlockPos(WarDayConfig.BASE_SPACING_BLOCKS.getAsInt(), WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0),
+                    new BlockPos(attackerTargetOffset(), WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0),
                     Optional.empty()
             );
+        }
+
+        private static int attackerTargetOffset() {
+            int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+            int margin = Math.min(MATCH_BORDER_SPAWN_MARGIN, Math.max(1, halfSize / 4));
+            int maximumSafeOffset = Math.max(1, halfSize - margin);
+            return Math.min(WarDayConfig.BASE_SPACING_BLOCKS.getAsInt(), maximumSafeOffset);
         }
 
         private int targetMinX() {

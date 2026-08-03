@@ -32,8 +32,8 @@ public final class WarDayConfig {
                 .comment("Display/config name for the second War Day team.")
                 .define("teamBName", "Team B");
         BASE_SPACING_BLOCKS = builder
-                .comment("Target distance between copied base centers during future prepare/copy phases.")
-                .defineInRange("baseSpacingBlocks", 1000, 256, 10000);
+                .comment("Preferred distance from the defender nexus to the attacker spawn; automatically limited to fit inside the match border.")
+                .defineInRange("baseSpacingBlocks", 100, 16, 10000);
         VALIDATION_RADIUS_BLOCKS = builder
                 .comment("Temporary scan radius around the admin running /warday validate until FTB claim scanning is wired.")
                 .defineInRange("validationRadiusBlocks", 512, 32, 4096);
