@@ -128,6 +128,7 @@ dependencies {
     implementation "curse.maven:ftb-library-forge-404465:7746959"
     implementation "curse.maven:ftb-teams-forge-404468:7878281"
     implementation "curse.maven:ftb-chunks-forge-314906:7608681"
+    compileOnly files('../../mods/curios-neoforge-9.5.1+1.21.1.jar')
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime

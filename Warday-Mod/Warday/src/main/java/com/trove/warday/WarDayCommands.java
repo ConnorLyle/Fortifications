@@ -29,6 +29,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -53,12 +54,17 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.IItemHandlerModifiable;
 
 import java.util.ArrayList;
 import java.util.ArrayDeque;
@@ -537,11 +543,52 @@ public class WarDayCommands {
         Set<UUID> attackerIds = attackerTeam.get().getMembers();
         Item defenderBlock = defenderMatchBlock();
         Item attackerBlock = attackerMatchBlock();
+        List<ServerPlayer> onlinePlayers = List.copyOf(source.getServer().getPlayerList().getPlayers());
 
-        for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
+        for (ServerPlayer player : onlinePlayers) {
             UUID id = player.getUUID();
-            snapshots.put(id, snapshotPlayer(player));
+            try {
+                snapshots.put(id, snapshotPlayer(player));
+            } catch (IllegalStateException exception) {
+                source.sendFailure(message(ChatFormatting.RED,
+                        "Could not safely snapshot " + player.getName().getString() + " inventory. War Day was not started; check the server log."));
+                return 0;
+            }
+        }
 
+        boolean originalKeepInventory = warDayLevel.getGameRules().getBoolean(GameRules.RULE_KEEPINVENTORY);
+        double originalWorldBorderCenterX = warDayLevel.getWorldBorder().getCenterX();
+        double originalWorldBorderCenterZ = warDayLevel.getWorldBorder().getCenterZ();
+        double originalWorldBorderSize = warDayLevel.getWorldBorder().getSize();
+        long matchEndGameTime = warDayLevel.getGameTime() + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt() * 20L;
+        state.start(
+                snapshots,
+                defenderIds,
+                attackerIds,
+                matchEndGameTime,
+                originalKeepInventory,
+                originalWorldBorderCenterX,
+                originalWorldBorderCenterZ,
+                originalWorldBorderSize
+        );
+
+        warDayLevel.getGameRules().getRule(GameRules.RULE_KEEPINVENTORY).set(true, source.getServer());
+        configureWorldBorder(warDayLevel, state.copiedNexusPos().get());
+        spawnNexusMarker(warDayLevel, state, state.copiedNexusPos().get());
+        DEATH_COUNTS.clear();
+        DIG_HISTORY.clear();
+        PENDING_RESPAWNS.clear();
+        int staleEntityClonesRemoved = clearPreparedMatchEntities(warDayLevel);
+        UUID entityBatchId = state.matchEntityBatchId().orElseThrow();
+        EntityTemplateSpawn entitySpawn = spawnPreparedEntityTemplates(
+                warDayLevel,
+                state.preparedEntityTemplates(),
+                entityBatchId
+        );
+
+        for (ServerPlayer player : onlinePlayers) {
+            player.closeContainer();
+            UUID id = player.getUUID();
             if (defenderIds.contains(id)) {
                 BlockPos spawn = defenderSpawn.get();
                 teleportPlayer(player, warDayLevel, spawn);
@@ -562,36 +609,6 @@ public class WarDayCommands {
                 spectators++;
             }
         }
-
-        boolean originalKeepInventory = warDayLevel.getGameRules().getBoolean(GameRules.RULE_KEEPINVENTORY);
-        double originalWorldBorderCenterX = warDayLevel.getWorldBorder().getCenterX();
-        double originalWorldBorderCenterZ = warDayLevel.getWorldBorder().getCenterZ();
-        double originalWorldBorderSize = warDayLevel.getWorldBorder().getSize();
-        warDayLevel.getGameRules().getRule(GameRules.RULE_KEEPINVENTORY).set(true, source.getServer());
-        configureWorldBorder(warDayLevel, state.copiedNexusPos().get());
-        spawnNexusMarker(warDayLevel, state, state.copiedNexusPos().get());
-        DEATH_COUNTS.clear();
-        DIG_HISTORY.clear();
-        PENDING_RESPAWNS.clear();
-
-        long matchEndGameTime = warDayLevel.getGameTime() + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt() * 20L;
-        state.start(
-                snapshots,
-                defenderIds,
-                attackerIds,
-                matchEndGameTime,
-                originalKeepInventory,
-                originalWorldBorderCenterX,
-                originalWorldBorderCenterZ,
-                originalWorldBorderSize
-        );
-        int staleEntityClonesRemoved = clearPreparedMatchEntities(warDayLevel);
-        UUID entityBatchId = state.matchEntityBatchId().orElseThrow();
-        EntityTemplateSpawn entitySpawn = spawnPreparedEntityTemplates(
-                warDayLevel,
-                state.preparedEntityTemplates(),
-                entityBatchId
-        );
         source.getServer().getPlayerList().broadcastSystemMessage(
                 message(ChatFormatting.GREEN, "War Day started for " + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt()
                         + " seconds. Defenders=" + defenders + ", attackers=" + attackers + ", spectators=" + spectators
@@ -666,15 +683,27 @@ public class WarDayCommands {
 
         WarDayState state = WarDayState.get(player.getServer());
         if (state.isActive()) {
-            state.savePlayerIfAbsent(player.getUUID(), snapshotPlayer(player));
+            if (state.savedPlayer(player.getUUID()).isEmpty()) {
+                try {
+                    state.savePlayerIfAbsent(player.getUUID(), snapshotPlayer(player));
+                } catch (IllegalStateException exception) {
+                    player.sendSystemMessage(message(ChatFormatting.RED,
+                            "Your inventory could not be safely snapshotted, so you were not moved into the active War Day. Contact an operator."));
+                    return;
+                }
+            }
             applyActiveMatchRole(player, state);
             return;
         }
 
         state.savedPlayer(player.getUUID()).ifPresent(snapshot -> {
-            restorePlayer(player.getServer(), player, snapshot);
-            state.removeSavedPlayer(player.getUUID());
-            player.sendSystemMessage(message(ChatFormatting.YELLOW, "Your pre-War Day location and game mode were restored."));
+            if (restorePlayer(player.getServer(), player, snapshot)) {
+                state.removeSavedPlayer(player.getUUID());
+                player.sendSystemMessage(message(ChatFormatting.YELLOW, "Your complete pre-War Day player state was restored."));
+            } else {
+                player.sendSystemMessage(message(ChatFormatting.RED,
+                        "Your location and vanilla inventory were restored, but optional inventory restoration failed. Your recovery snapshot was retained; contact an operator."));
+            }
         });
     }
 
@@ -901,9 +930,13 @@ public class WarDayCommands {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             WarDayState.PlayerSnapshot snapshot = snapshots.get(player.getUUID());
             if (snapshot != null) {
-                restorePlayer(server, player, snapshot);
-                state.removeSavedPlayer(player.getUUID());
-                restored++;
+                if (restorePlayer(server, player, snapshot)) {
+                    state.removeSavedPlayer(player.getUUID());
+                    restored++;
+                } else {
+                    player.sendSystemMessage(message(ChatFormatting.RED,
+                            "Optional inventory restoration failed. Your recovery snapshot was retained; contact an operator."));
+                }
             }
         }
 
@@ -913,6 +946,7 @@ public class WarDayCommands {
             );
         }
         warDayLevel(server, state).ifPresent(level -> {
+            clearLoadedMatchStorage(level, state);
             clearPreparedMatchEntities(level);
             clearTransientMatchEntities(level, state);
             restoreWorldBorder(level, state);
@@ -923,6 +957,72 @@ public class WarDayCommands {
         DEATH_COUNTS.clear();
         DIG_HISTORY.clear();
         return restored;
+    }
+
+    private static boolean isActiveWarDayLevel(ServerLevel level) {
+        WarDayState state = WarDayState.get(level.getServer());
+        return state.isActive() && level.dimension().location().toString().equals(state.warDayDimension());
+    }
+
+    private static void clearLoadedMatchStorage(ServerLevel level, WarDayState state) {
+        if (state.copiedNexusPos().isEmpty()) {
+            return;
+        }
+
+        BlockPos nexusPos = state.copiedNexusPos().get();
+        int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+        int minChunkX = Math.floorDiv(nexusPos.getX() - halfSize, 16);
+        int maxChunkX = Math.floorDiv(nexusPos.getX() + halfSize, 16);
+        int minChunkZ = Math.floorDiv(nexusPos.getZ() - halfSize, 16);
+        int maxChunkZ = Math.floorDiv(nexusPos.getZ() + halfSize, 16);
+
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                var chunk = level.getChunkSource().getChunkNow(chunkX, chunkZ);
+                if (chunk == null) {
+                    continue;
+                }
+                for (Map.Entry<BlockPos, BlockEntity> entry : chunk.getBlockEntities().entrySet()) {
+                    if (!isInMatchBounds(entry.getKey(), nexusPos)) {
+                        continue;
+                    }
+                    if (entry.getValue() instanceof Container container) {
+                        container.clearContent();
+                    }
+                    clearBlockItemHandlers(level, entry.getKey());
+                    entry.getValue().setChanged();
+                }
+            }
+        }
+
+        for (Entity entity : level.getAllEntities()) {
+            if (entity instanceof ItemFrame itemFrame && isInMatchBounds(itemFrame.blockPosition(), nexusPos)) {
+                itemFrame.setItem(ItemStack.EMPTY, false);
+            }
+        }
+    }
+
+    private static void clearBlockItemHandlers(ServerLevel level, BlockPos pos) {
+        Set<IItemHandler> handlers = new HashSet<>();
+        IItemHandler unsided = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+        if (unsided != null) {
+            handlers.add(unsided);
+        }
+        for (Direction direction : Direction.values()) {
+            IItemHandler sided = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, direction);
+            if (sided != null) {
+                handlers.add(sided);
+            }
+        }
+
+        for (IItemHandler handler : handlers) {
+            if (!(handler instanceof IItemHandlerModifiable modifiable)) {
+                continue;
+            }
+            for (int slot = 0; slot < modifiable.getSlots(); slot++) {
+                modifiable.setStackInSlot(slot, ItemStack.EMPTY);
+            }
+        }
     }
 
     private static void giveRespawnMatchBlocks(ServerPlayer player) {
@@ -998,11 +1098,18 @@ public class WarDayCommands {
                 respawnPos == null ? 0 : respawnPos.getY(),
                 respawnPos == null ? 0 : respawnPos.getZ(),
                 player.getRespawnAngle(),
-                player.isRespawnForced()
+                player.isRespawnForced(),
+                true,
+                player.getInventory().save(new ListTag()),
+                player.getInventory().selected,
+                player.getEnderChestInventory().createTag(player.registryAccess()),
+                saveItemStack(player.containerMenu.getCarried(), player),
+                captureCuriosInventory(player)
         );
     }
 
-    private static void restorePlayer(MinecraftServer server, ServerPlayer player, WarDayState.PlayerSnapshot snapshot) {
+    private static boolean restorePlayer(MinecraftServer server, ServerPlayer player, WarDayState.PlayerSnapshot snapshot) {
+        boolean inventoryRestored = restorePlayerInventory(player, snapshot);
         if (!snapshot.dimension().isBlank()) {
             ServerLevel restoreLevel = server.getLevel(ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(snapshot.dimension())));
             if (restoreLevel != null) {
@@ -1011,6 +1118,114 @@ public class WarDayCommands {
         }
         restorePlayerRespawn(player, snapshot);
         player.setGameMode(snapshot.gameMode());
+        return inventoryRestored;
+    }
+
+    private static CompoundTag saveItemStack(ItemStack stack, ServerPlayer player) {
+        if (stack.isEmpty()) {
+            return new CompoundTag();
+        }
+        Tag saved = stack.saveOptional(player.registryAccess());
+        return saved instanceof CompoundTag compoundTag ? compoundTag.copy() : new CompoundTag();
+    }
+
+    private static CompoundTag captureCuriosInventory(ServerPlayer player) {
+        if (!ModList.get().isLoaded("curios")) {
+            return new CompoundTag();
+        }
+        try {
+            CompoundTag snapshot = CuriosInventoryBridge.capture(player);
+            if (!CuriosInventoryBridge.wasCaptured(snapshot)) {
+                throw new IllegalStateException("Curios inventory capability was unavailable");
+            }
+            return snapshot;
+        } catch (LinkageError | RuntimeException exception) {
+            WarDayMod.LOGGER.error("Could not snapshot Curios inventory for {}", player.getGameProfile().getName(), exception);
+            throw new IllegalStateException("Could not snapshot Curios inventory", exception);
+        }
+    }
+
+    @SubscribeEvent
+    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || !(event.getLevel() instanceof ServerLevel level)
+                || !isActiveWarDayLevel(level)) {
+            return;
+        }
+
+        BlockEntity blockEntity = level.getBlockEntity(event.getPos());
+        boolean exposesItemStorage = blockEntity instanceof Container
+                || level.getCapability(Capabilities.ItemHandler.BLOCK, event.getPos(), null) != null
+                || level.getCapability(Capabilities.ItemHandler.BLOCK, event.getPos(), event.getFace()) != null;
+        if (!exposesItemStorage) {
+            return;
+        }
+
+        event.setCanceled(true);
+        event.setCancellationResult(InteractionResult.FAIL);
+        player.displayClientMessage(message(ChatFormatting.RED,
+                "Storage blocks are disabled during War Day so match items cannot alter persistent inventories."), true);
+    }
+
+    @SubscribeEvent
+    public void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || !(event.getLevel() instanceof ServerLevel level)
+                || !isActiveWarDayLevel(level)
+                || !(event.getTarget() instanceof ItemFrame)) {
+            return;
+        }
+
+        event.setCanceled(true);
+        event.setCancellationResult(InteractionResult.FAIL);
+        player.displayClientMessage(message(ChatFormatting.RED,
+                "Item frames cannot hold items during War Day."), true);
+    }
+
+    @SubscribeEvent
+    public void onEntityInteractSpecific(PlayerInteractEvent.EntityInteractSpecific event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || !(event.getLevel() instanceof ServerLevel level)
+                || !isActiveWarDayLevel(level)
+                || !(event.getTarget() instanceof ItemFrame)) {
+            return;
+        }
+
+        event.setCanceled(true);
+        event.setCancellationResult(InteractionResult.FAIL);
+        player.displayClientMessage(message(ChatFormatting.RED,
+                "Item frames cannot hold items during War Day."), true);
+    }
+
+    private static boolean restorePlayerInventory(ServerPlayer player, WarDayState.PlayerSnapshot snapshot) {
+        if (!snapshot.hasInventorySnapshot()) {
+            return true;
+        }
+
+        player.closeContainer();
+        player.getInventory().load(snapshot.inventory());
+        player.getInventory().selected = Math.max(0, Math.min(8, snapshot.selectedSlot()));
+        player.getEnderChestInventory().fromTag(snapshot.enderChest(), player.registryAccess());
+        player.inventoryMenu.setCarried(ItemStack.parseOptional(player.registryAccess(), snapshot.carriedItem()));
+        boolean curiosRestored = restoreCuriosInventory(player, snapshot.curiosInventory());
+        player.getInventory().setChanged();
+        player.inventoryMenu.broadcastFullState();
+        return curiosRestored;
+    }
+
+    private static boolean restoreCuriosInventory(ServerPlayer player, CompoundTag snapshot) {
+        if (snapshot.isEmpty()) {
+            return true;
+        }
+        if (!ModList.get().isLoaded("curios")) {
+            return false;
+        }
+        try {
+            return CuriosInventoryBridge.restore(player, snapshot);
+        } catch (LinkageError | RuntimeException exception) {
+            WarDayMod.LOGGER.error("Could not restore Curios inventory for {}", player.getGameProfile().getName(), exception);
+            return false;
+        }
     }
 
     private static void restorePlayerRespawn(ServerPlayer player, WarDayState.PlayerSnapshot snapshot) {

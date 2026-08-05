@@ -116,7 +116,13 @@ public class WarDayState extends SavedData {
                                 0,
                                 0,
                                 0.0F,
-                                false
+                                false,
+                                false,
+                                new ListTag(),
+                                0,
+                                new ListTag(),
+                                new CompoundTag(),
+                                new CompoundTag()
                         )
                 );
             }
@@ -439,9 +445,23 @@ public class WarDayState extends SavedData {
             int respawnY,
             int respawnZ,
             float respawnAngle,
-            boolean respawnForced
+            boolean respawnForced,
+            boolean hasInventorySnapshot,
+            ListTag inventory,
+            int selectedSlot,
+            ListTag enderChest,
+            CompoundTag carriedItem,
+            CompoundTag curiosInventory
     ) {
+        public PlayerSnapshot {
+            inventory = inventory == null ? new ListTag() : inventory.copy();
+            enderChest = enderChest == null ? new ListTag() : enderChest.copy();
+            carriedItem = carriedItem == null ? new CompoundTag() : carriedItem.copy();
+            curiosInventory = curiosInventory == null ? new CompoundTag() : curiosInventory.copy();
+        }
+
         private static PlayerSnapshot load(CompoundTag tag) {
+            boolean hasInventorySnapshot = tag.getBoolean("HasInventorySnapshot") || tag.contains("InventorySnapshot", 9);
             return new PlayerSnapshot(
                     GameType.byName(tag.getString("Mode"), GameType.SURVIVAL),
                     tag.getString("Dimension"),
@@ -456,7 +476,13 @@ public class WarDayState extends SavedData {
                     tag.getInt("RespawnY"),
                     tag.getInt("RespawnZ"),
                     tag.getFloat("RespawnAngle"),
-                    tag.getBoolean("RespawnForced")
+                    tag.getBoolean("RespawnForced"),
+                    hasInventorySnapshot,
+                    tag.getList("InventorySnapshot", 10),
+                    tag.getInt("SelectedInventorySlot"),
+                    tag.getList("EnderChestSnapshot", 10),
+                    tag.getCompound("CarriedItemSnapshot"),
+                    tag.getCompound("CuriosInventorySnapshot")
             );
         }
 
@@ -476,7 +502,35 @@ public class WarDayState extends SavedData {
             tag.putInt("RespawnZ", respawnZ);
             tag.putFloat("RespawnAngle", respawnAngle);
             tag.putBoolean("RespawnForced", respawnForced);
+            tag.putBoolean("HasInventorySnapshot", hasInventorySnapshot);
+            if (hasInventorySnapshot) {
+                tag.put("InventorySnapshot", inventory.copy());
+                tag.putInt("SelectedInventorySlot", selectedSlot);
+                tag.put("EnderChestSnapshot", enderChest.copy());
+                tag.put("CarriedItemSnapshot", carriedItem.copy());
+                tag.put("CuriosInventorySnapshot", curiosInventory.copy());
+            }
             return tag;
+        }
+
+        @Override
+        public ListTag inventory() {
+            return inventory.copy();
+        }
+
+        @Override
+        public ListTag enderChest() {
+            return enderChest.copy();
+        }
+
+        @Override
+        public CompoundTag carriedItem() {
+            return carriedItem.copy();
+        }
+
+        @Override
+        public CompoundTag curiosInventory() {
+            return curiosInventory.copy();
         }
     }
 }

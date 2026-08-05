@@ -22,8 +22,14 @@ This is the canonical War Day backlog. Agents must follow the queue and completi
 - [ ] Snapshot each participant's complete pre-War-Day inventory state and restore that exact state after War Day.
   - Items gained, moved, damaged, placed, consumed, or lost during War Day must not permanently alter the player's pre-event inventory.
   - Include armor, offhand, main inventory, selected hotbar slot, and any other player inventory data used by the installed modpack.
+  - Implementation added 2026-08-04: the match-start snapshot now persists each online participant before any teleport or match-issued item mutation. It captures the vanilla main inventory, armor, offhand, selected hotbar slot, Ender Chest, carried cursor stack, and the complete Curios inventory tag when Curios is installed.
+  - Restoration runs for normal match end and saved-player recovery after logout, reconnect, or server restart. Legacy snapshots remain compatible, and a recovery snapshot is retained instead of discarded if optional Curios data cannot be restored safely.
+  - Duplication safeguards added: players cannot interact with arena containers, item-handler blocks, or item frames during an active match; loaded match-area containers, modifiable item handlers, and item frames are cleared during match cleanup before the temporary world is reused.
+  - Build verification: `gradle build --no-daemon` succeeded in `Warday-Mod/Warday` on 2026-08-04. The rebuilt `MYTH MODS FOR DEREK/warday-1.0.0.jar` matches the build artifact at SHA-256 `335E29BE22FB513A250F4C09CD6A8F9A747737F4318AE22E1F0C0D25C1FA8D21`.
+  - Manual verification still required before completion: test main inventory, armor, offhand, selected slot, Ender Chest, cursor-held items, every Curios slot, nested backpack contents, gained/consumed/damaged/placed items, death and respawn, logout/reconnect, and server restart during an active match. Also test automation deposits and modded storage blocks that expose non-modifiable item handlers.
 - [ ] Ensure temporary team blocks and other match-issued items are absent after War Day restoration.
   - This may be resolved by exact inventory restoration, but it must be tested independently before being struck off.
+  - Source implementation now restores the exact pre-match snapshot after team blocks are issued, so match-issued stacks should be removed automatically. Independent in-game verification is still required.
 
 ## Match presentation and HUD
 
