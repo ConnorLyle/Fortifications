@@ -30,6 +30,10 @@ This is the canonical War Day backlog. Agents must follow the queue and completi
 - [ ] Ensure temporary team blocks and other match-issued items are absent after War Day restoration.
   - This may be resolved by exact inventory restoration, but it must be tested independently before being struck off.
   - Source implementation now restores the exact pre-match snapshot after team blocks are issued, so match-issued stacks should be removed automatically. Independent in-game verification is still required.
+  - Independent runtime safeguard added 2026-08-05: after restoration, Warday reserializes and compares the player's vanilla inventory, selected slot, Ender Chest, cursor stack, and Curios inventory with the saved pre-match snapshot. Any mismatch is logged, reported to the player, and leaves the recovery snapshot intact instead of accepting a partial restoration.
+  - Dropped item entities, arena storage contents, item-handler contents, and item-frame items are cleared during match cleanup, covering issued blocks moved outside the player's inventory without deleting legitimate blocks from the restored snapshot.
+  - Build verification: `gradle build --no-daemon` succeeded in `Warday-Mod/Warday` on 2026-08-05. The rebuilt `MYTH MODS FOR DEREK/warday-1.0.0.jar` matches the build artifact at SHA-256 `FF607472065408511972A5C0FE92EEA8A704A4E61BEA69FEC3D6A9DE002F553A`.
+  - Manual verification still required before completion: begin with zero and then pre-owned team blocks; start War Day; place, drop, move, and retain issued blocks; test death/respawn, logout/reconnect, and a server restart; end the match and confirm only the exact pre-match stacks remain with no recoverable arena copies.
 
 ## Match presentation and HUD
 

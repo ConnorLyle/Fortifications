@@ -702,7 +702,7 @@ public class WarDayCommands {
                 player.sendSystemMessage(message(ChatFormatting.YELLOW, "Your complete pre-War Day player state was restored."));
             } else {
                 player.sendSystemMessage(message(ChatFormatting.RED,
-                        "Your location and vanilla inventory were restored, but optional inventory restoration failed. Your recovery snapshot was retained; contact an operator."));
+                        "Your location was restored, but inventory restoration could not be verified. Your recovery snapshot was retained; contact an operator."));
             }
         });
     }
@@ -935,7 +935,7 @@ public class WarDayCommands {
                     restored++;
                 } else {
                     player.sendSystemMessage(message(ChatFormatting.RED,
-                            "Optional inventory restoration failed. Your recovery snapshot was retained; contact an operator."));
+                            "Inventory restoration could not be verified. Your recovery snapshot was retained; contact an operator."));
                 }
             }
         }
@@ -1210,7 +1210,50 @@ public class WarDayCommands {
         boolean curiosRestored = restoreCuriosInventory(player, snapshot.curiosInventory());
         player.getInventory().setChanged();
         player.inventoryMenu.broadcastFullState();
-        return curiosRestored;
+        return verifyRestoredInventory(player, snapshot, curiosRestored);
+    }
+
+    private static boolean verifyRestoredInventory(
+            ServerPlayer player,
+            WarDayState.PlayerSnapshot snapshot,
+            boolean curiosRestored
+    ) {
+        List<String> mismatches = new ArrayList<>();
+        if (!snapshot.inventory().equals(player.getInventory().save(new ListTag()))) {
+            mismatches.add("vanilla inventory");
+        }
+        if (snapshot.selectedSlot() != player.getInventory().selected) {
+            mismatches.add("selected hotbar slot");
+        }
+        if (!snapshot.enderChest().equals(player.getEnderChestInventory().createTag(player.registryAccess()))) {
+            mismatches.add("Ender Chest");
+        }
+        if (!snapshot.carriedItem().equals(saveItemStack(player.inventoryMenu.getCarried(), player))) {
+            mismatches.add("carried cursor stack");
+        }
+
+        CompoundTag expectedCurios = snapshot.curiosInventory();
+        if (!curiosRestored) {
+            mismatches.add("Curios inventory");
+        } else if (!expectedCurios.isEmpty()) {
+            try {
+                if (!expectedCurios.equals(captureCuriosInventory(player))) {
+                    mismatches.add("Curios inventory");
+                }
+            } catch (IllegalStateException exception) {
+                mismatches.add("Curios inventory");
+            }
+        }
+
+        if (!mismatches.isEmpty()) {
+            WarDayMod.LOGGER.error(
+                    "Post-restore inventory verification failed for {}: {}",
+                    player.getGameProfile().getName(),
+                    String.join(", ", mismatches)
+            );
+            return false;
+        }
+        return true;
     }
 
     private static boolean restoreCuriosInventory(ServerPlayer player, CompoundTag snapshot) {
