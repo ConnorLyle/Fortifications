@@ -11,6 +11,7 @@ public final class WarDayConfig {
     public static final ModConfigSpec.IntValue MAX_BASE_CHUNKS;
     public static final ModConfigSpec.IntValue MAX_BASE_FOOTPRINT_BLOCKS;
     public static final ModConfigSpec.IntValue WAR_DAY_BASE_Y;
+    public static final ModConfigSpec.IntValue MAX_PREPARED_ENTITIES;
     public static final ModConfigSpec.IntValue RESPAWN_DELAY_SECONDS;
     public static final ModConfigSpec.IntValue MATCH_DURATION_SECONDS;
     public static final ModConfigSpec.IntValue MAP_HALF_SIZE_BLOCKS;
@@ -52,6 +53,9 @@ public final class WarDayConfig {
         WAR_DAY_BASE_Y = builder
                 .comment("Preview target Y level for copied base origins during /warday prepare.")
                 .defineInRange("warDayBaseY", 80, -64, 320);
+        MAX_PREPARED_ENTITIES = builder
+                .comment("Maximum persistent non-player entities captured from both copied areas and recreated for each match. Set to 0 to disable entity templates.")
+                .defineInRange("maxPreparedEntities", 256, 0, 4096);
         RESPAWN_DELAY_SECONDS = builder
                 .comment("Legacy fallback respawn delay in seconds. Scaling death penalties are used during active matches.")
                 .defineInRange("respawnDelaySeconds", 10, 0, 300);

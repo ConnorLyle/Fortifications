@@ -13,6 +13,8 @@ import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -36,6 +38,8 @@ public class WarDayState extends SavedData {
     private double originalWorldBorderSize;
     private boolean worldBorderCaptured;
     private UUID nexusMarkerId;
+    private UUID matchEntityBatchId;
+    private final List<CompoundTag> preparedEntityTemplates = new ArrayList<>();
     private final Map<UUID, PlayerSnapshot> savedPlayers = new HashMap<>();
     private final Set<UUID> defenderParticipants = new HashSet<>();
     private final Set<UUID> attackerParticipants = new HashSet<>();
@@ -71,6 +75,13 @@ public class WarDayState extends SavedData {
         state.worldBorderCaptured = tag.getBoolean("WorldBorderCaptured");
         if (tag.hasUUID("NexusMarkerId")) {
             state.nexusMarkerId = tag.getUUID("NexusMarkerId");
+        }
+        if (tag.hasUUID("MatchEntityBatchId")) {
+            state.matchEntityBatchId = tag.getUUID("MatchEntityBatchId");
+        }
+        ListTag preparedEntities = tag.getList("PreparedEntityTemplates", 10);
+        for (int i = 0; i < preparedEntities.size(); i++) {
+            state.preparedEntityTemplates.add(preparedEntities.getCompound(i).copy());
         }
         loadUuidSet(tag.getList("DefenderParticipants", 10), state.defenderParticipants);
         loadUuidSet(tag.getList("AttackerParticipants", 10), state.attackerParticipants);
@@ -136,6 +147,12 @@ public class WarDayState extends SavedData {
         if (nexusMarkerId != null) {
             tag.putUUID("NexusMarkerId", nexusMarkerId);
         }
+        if (matchEntityBatchId != null) {
+            tag.putUUID("MatchEntityBatchId", matchEntityBatchId);
+        }
+        ListTag preparedEntities = new ListTag();
+        preparedEntityTemplates.forEach(template -> preparedEntities.add(template.copy()));
+        tag.put("PreparedEntityTemplates", preparedEntities);
         tag.put("DefenderParticipants", saveUuidSet(defenderParticipants));
         tag.put("AttackerParticipants", saveUuidSet(attackerParticipants));
         tag.put("DeathCounts", saveUuidIntMap(deathCounts, "Deaths"));
@@ -151,14 +168,27 @@ public class WarDayState extends SavedData {
         return tag;
     }
 
-    public void markPrepared(String dimension, String defenderTeam, String attackerTeam, BlockPos copiedNexusPos, BlockPos attackerSpawnPos) {
+    public void markPrepared(
+            String dimension,
+            String defenderTeam,
+            String attackerTeam,
+            BlockPos copiedNexusPos,
+            BlockPos attackerSpawnPos,
+            List<CompoundTag> entityTemplates
+    ) {
         this.prepared = true;
         this.warDayDimension = dimension;
         this.defenderTeam = defenderTeam;
         this.attackerTeam = attackerTeam;
         this.copiedNexusPos = copiedNexusPos;
         this.attackerSpawnPos = attackerSpawnPos;
+        this.preparedEntityTemplates.clear();
+        entityTemplates.forEach(template -> this.preparedEntityTemplates.add(template.copy()));
         setDirty();
+    }
+
+    public List<CompoundTag> preparedEntityTemplates() {
+        return preparedEntityTemplates.stream().map(CompoundTag::copy).toList();
     }
 
     public void start(
@@ -179,6 +209,7 @@ public class WarDayState extends SavedData {
         this.originalWorldBorderCenterZ = originalWorldBorderCenterZ;
         this.originalWorldBorderSize = originalWorldBorderSize;
         this.worldBorderCaptured = true;
+        this.matchEntityBatchId = UUID.randomUUID();
         savedPlayers.clear();
         savedPlayers.putAll(players);
         this.defenderParticipants.clear();
@@ -263,6 +294,7 @@ public class WarDayState extends SavedData {
         keepInventoryCaptured = false;
         worldBorderCaptured = false;
         nexusMarkerId = null;
+        matchEntityBatchId = null;
         defenderParticipants.clear();
         attackerParticipants.clear();
         deathCounts.clear();
@@ -282,6 +314,10 @@ public class WarDayState extends SavedData {
 
     public boolean isActive() {
         return active;
+    }
+
+    public Optional<UUID> matchEntityBatchId() {
+        return Optional.ofNullable(matchEntityBatchId);
     }
 
     public String warDayDimension() {

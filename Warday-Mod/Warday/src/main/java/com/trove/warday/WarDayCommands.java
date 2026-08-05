@@ -22,6 +22,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -31,6 +32,7 @@ import net.minecraft.world.Container;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.decoration.HangingEntity;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.decoration.Painting;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -52,6 +54,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
@@ -79,6 +82,10 @@ public class WarDayCommands {
     private static final int NEXUS_SHELL_MIN_Y_OFFSET = -3;
     private static final int NEXUS_SHELL_MAX_Y_OFFSET = 5;
     private static final int MATCH_BORDER_SPAWN_MARGIN = 16;
+    private static final double HANGING_ENTITY_SCAN_MARGIN = 8.0D;
+    private static final String MATCH_ENTITY_MARKER = "warday_match_entity";
+    private static final String MATCH_ENTITY_BATCH = "warday_match_entity_batch";
+    private static final String PREPARED_DECORATIVE_MARKER = "warday_prepared_decorative";
     private static final SuggestionProvider<CommandSourceStack> TEAM_NAME_SUGGESTIONS = WarDayCommands::suggestTeamNames;
     private static final Map<UUID, PendingRespawn> PENDING_RESPAWNS = new HashMap<>();
     private static final Map<UUID, Integer> DEATH_COUNTS = new HashMap<>();
@@ -280,6 +287,12 @@ public class WarDayCommands {
     }
 
     private int prepareConfirm(CommandSourceStack source) {
+        WarDayState state = WarDayState.get(source.getServer());
+        if (state.isActive()) {
+            source.sendFailure(message(ChatFormatting.RED, "War Day cannot be prepared while a match is active."));
+            return 0;
+        }
+
         Optional<ResolvedBases> resolved = resolveBases(source);
         if (resolved.isEmpty()) {
             return 0;
@@ -329,12 +342,16 @@ public class WarDayCommands {
         }
 
         int teamAWiped = wipeDestinationArea(defenderSourceLevel, targetLevel, teamAPlan);
+        int teamADecorationsCleared = clearDestinationDecorativeEntities(targetLevel, teamAPlan);
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                "Cleared " + teamAWiped + " defender destination blocks from transformed claimed chunks."), true);
+                "Cleared " + teamAWiped + " defender destination blocks and " + teamADecorationsCleared
+                        + " existing hanging entities from transformed claimed chunks."), true);
         if (attackerPlan.isPresent()) {
             int attackerWiped = wipeDestinationArea(attackerSourceLevel, targetLevel, attackerPlan.get());
+            int attackerDecorationsCleared = clearDestinationDecorativeEntities(targetLevel, attackerPlan.get());
             source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                    "Cleared " + attackerWiped + " attacker destination blocks from transformed claimed chunks."), true);
+                    "Cleared " + attackerWiped + " attacker destination blocks and " + attackerDecorationsCleared
+                            + " existing hanging entities from transformed claimed chunks."), true);
         }
 
         CopyResult teamAResult = copyBase(defenderSourceLevel, targetLevel, teamAPlan);
@@ -344,7 +361,8 @@ public class WarDayCommands {
                         + " blocks, " + teamAResult.blockEntitiesCopied() + " block entities, "
                         + teamAResult.containersCleared() + " containers cleared, "
                         + teamAEntityResult.entitiesCopied() + " decorative entities, "
-                        + teamAEntityResult.itemFramesCleared() + " item frames cleared."), true);
+                        + teamAEntityResult.itemFramesCleared() + " item frames cleared, "
+                        + teamAEntityResult.entitiesFailed() + " decorative entities failed validation/copy."), true);
         Optional<BlockPos> safeAttackerSpawn = Optional.empty();
         if (attackerPlan.isPresent()) {
             PlacementPlan plan = attackerPlan.get();
@@ -363,10 +381,35 @@ public class WarDayCommands {
                             + " blocks, " + attackerResult.blockEntitiesCopied() + " block entities, "
                             + attackerResult.containersCleared() + " containers cleared, "
                             + attackerEntityResult.entitiesCopied() + " decorative entities, "
-                            + attackerEntityResult.itemFramesCleared() + " item frames cleared. Safe spawn at "
+                            + attackerEntityResult.itemFramesCleared() + " item frames cleared, "
+                            + attackerEntityResult.entitiesFailed() + " decorative entities failed validation/copy. Safe spawn at "
                             + formatPos(spawnPos)), true);
         }
-        WarDayState state = WarDayState.get(source.getServer());
+        int entityLimit = WarDayConfig.MAX_PREPARED_ENTITIES.getAsInt();
+        Set<UUID> capturedEntityRoots = new HashSet<>();
+        EntityTemplateCapture defenderEntityCapture = capturePreparedEntityTemplates(
+                defenderSourceLevel,
+                targetLevel,
+                teamAPlan,
+                entityLimit,
+                capturedEntityRoots
+        );
+        List<CompoundTag> preparedEntityTemplates = new ArrayList<>(defenderEntityCapture.templates());
+        EntityTemplateCapture attackerEntityCapture = EntityTemplateCapture.empty();
+        if (attackerPlan.isPresent()) {
+            int remainingEntities = entityLimit - defenderEntityCapture.entityCount();
+            attackerEntityCapture = capturePreparedEntityTemplates(
+                    attackerSourceLevel,
+                    targetLevel,
+                    attackerPlan.get(),
+                    Math.max(0, remainingEntities),
+                    capturedEntityRoots
+            );
+            preparedEntityTemplates.addAll(attackerEntityCapture.templates());
+        }
+        int preparedEntityCount = defenderEntityCapture.entityCount() + attackerEntityCapture.entityCount();
+        int entityTemplatesSkipped = defenderEntityCapture.skippedCount() + attackerEntityCapture.skippedCount();
+
         BlockPos copiedNexusPos = teamAPlan.targetPos(bases.teamA().nexus().pos());
         buildNexusShell(targetLevel, copiedNexusPos);
         state.markPrepared(
@@ -374,10 +417,16 @@ public class WarDayCommands {
                 bases.teamA().team().getName().getString(),
                 bases.attackerArea().isPresent() ? WarDayConfig.TEAM_B_NAME.get() : "",
                 copiedNexusPos,
-                safeAttackerSpawn.orElse(null)
+                safeAttackerSpawn.orElse(null),
+                preparedEntityTemplates
         );
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
                 "Built protected nexus shell at " + formatPos(copiedNexusPos) + "."), true);
+        source.sendSuccess(() -> message(
+                entityTemplatesSkipped == 0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW,
+                "Prepared " + preparedEntityCount + " non-player entities in " + preparedEntityTemplates.size()
+                        + " entity groups for match-time cloning; skipped " + entityTemplatesSkipped + "."
+        ), true);
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
                 "Copied defender base rotation applied. Nexus win tracking will be added in a later pass."), false);
         return 1;
@@ -406,6 +455,8 @@ public class WarDayCommands {
                     "Copied nexus: " + state.copiedNexusPos().map(WarDayCommands::formatPos).orElse("missing")), false);
             source.sendSuccess(() -> message(ChatFormatting.GRAY,
                     "Attacker spawn: " + state.attackerSpawnPos().map(WarDayCommands::formatPos).orElse("missing")), false);
+            source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                    "Prepared non-player entity groups: " + state.preparedEntityTemplates().size()), false);
             if (state.isActive()) {
                 long secondsRemaining = Math.max(0L, (state.matchEndGameTime() - source.getLevel().getGameTime()) / 20L);
                 source.sendSuccess(() -> message(ChatFormatting.GRAY, "Match time remaining: " + secondsRemaining + " seconds"), false);
@@ -534,12 +585,46 @@ public class WarDayCommands {
                 originalWorldBorderCenterZ,
                 originalWorldBorderSize
         );
+        int staleEntityClonesRemoved = clearPreparedMatchEntities(warDayLevel);
+        UUID entityBatchId = state.matchEntityBatchId().orElseThrow();
+        EntityTemplateSpawn entitySpawn = spawnPreparedEntityTemplates(
+                warDayLevel,
+                state.preparedEntityTemplates(),
+                entityBatchId
+        );
         source.getServer().getPlayerList().broadcastSystemMessage(
                 message(ChatFormatting.GREEN, "War Day started for " + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt()
-                        + " seconds. Defenders=" + defenders + ", attackers=" + attackers + ", spectators=" + spectators),
+                        + " seconds. Defenders=" + defenders + ", attackers=" + attackers + ", spectators=" + spectators
+                        + ", prepared entities=" + entitySpawn.spawnedCount() + "."),
                 false
         );
+        if (staleEntityClonesRemoved > 0 || entitySpawn.failedCount() > 0) {
+            int staleRemoved = staleEntityClonesRemoved;
+            source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                    "Entity clone cleanup/spawn details: stale removed=" + staleRemoved
+                            + ", failed to spawn=" + entitySpawn.failedCount() + "."), true);
+        }
         return 1;
+    }
+
+    @SubscribeEvent
+    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel level)
+                || !event.getEntity().getPersistentData().getBoolean(MATCH_ENTITY_MARKER)) {
+            return;
+        }
+
+        WarDayState state = WarDayState.get(level.getServer());
+        CompoundTag persistentData = event.getEntity().getPersistentData();
+        Optional<UUID> activeBatchId = state.matchEntityBatchId();
+        boolean belongsToActiveMatch = state.isActive()
+                && level.dimension().location().toString().equals(state.warDayDimension())
+                && persistentData.hasUUID(MATCH_ENTITY_BATCH)
+                && activeBatchId.map(id -> id.equals(persistentData.getUUID(MATCH_ENTITY_BATCH))).orElse(false);
+        if (!belongsToActiveMatch) {
+            event.setCanceled(true);
+            event.getEntity().discard();
+        }
     }
 
     @SubscribeEvent
@@ -828,6 +913,7 @@ public class WarDayCommands {
             );
         }
         warDayLevel(server, state).ifPresent(level -> {
+            clearPreparedMatchEntities(level);
             clearTransientMatchEntities(level, state);
             restoreWorldBorder(level, state);
             removeNexusMarker(level, state);
@@ -1009,6 +1095,17 @@ public class WarDayCommands {
 
         level.getWorldBorder().setCenter(state.originalWorldBorderCenterX(), state.originalWorldBorderCenterZ());
         level.getWorldBorder().setSize(state.originalWorldBorderSize());
+    }
+
+    private static int clearPreparedMatchEntities(ServerLevel level) {
+        List<Entity> preparedEntities = new ArrayList<>();
+        for (Entity entity : level.getAllEntities()) {
+            if (entity.getPersistentData().getBoolean(MATCH_ENTITY_MARKER)) {
+                preparedEntities.add(entity);
+            }
+        }
+        preparedEntities.forEach(Entity::discard);
+        return preparedEntities.size();
     }
 
     private static void clearTransientMatchEntities(ServerLevel level, WarDayState state) {
@@ -1660,19 +1757,264 @@ public class WarDayCommands {
         return wiped;
     }
 
+    private static int clearDestinationDecorativeEntities(ServerLevel targetLevel, PlacementPlan plan) {
+        AABB targetBounds = plan.targetEntityBounds(targetLevel).inflate(HANGING_ENTITY_SCAN_MARGIN);
+        List<Entity> existingDecorations = targetLevel.getEntities(
+                (Entity) null,
+                targetBounds,
+                entity -> isAllowedDecorativeEntity(entity)
+                        && entity instanceof HangingEntity hangingEntity
+                        && plan.containsTargetBlock(hangingEntity.getPos())
+        );
+        existingDecorations.forEach(Entity::discard);
+        return existingDecorations.size();
+    }
+
+    private static EntityTemplateCapture capturePreparedEntityTemplates(
+            ServerLevel sourceLevel,
+            ServerLevel targetLevel,
+            PlacementPlan plan,
+            int remainingCapacity,
+            Set<UUID> capturedRoots
+    ) {
+        List<CompoundTag> templates = new ArrayList<>();
+        int capturedEntities = 0;
+        int skippedEntities = 0;
+        AABB sourceBounds = plan.sourceEntityBounds(sourceLevel);
+        List<Entity> candidates = sourceLevel.getEntities(
+                (Entity) null,
+                sourceBounds,
+                entity -> !entity.isPassenger()
+                        && plan.containsSourceChunk(entity.blockPosition())
+                        && entity.getSelfAndPassengers().allMatch(WarDayCommands::isAllowedPreparedEntity)
+        );
+
+        for (Entity sourceEntity : candidates) {
+            if (!capturedRoots.add(sourceEntity.getUUID())) {
+                continue;
+            }
+
+            CompoundTag tag = new CompoundTag();
+            if (!savePreparedEntityTree(sourceEntity, tag)) {
+                skippedEntities += Math.toIntExact(sourceEntity.getSelfAndPassengers().count());
+                continue;
+            }
+
+            int entityTreeSize = countEntityTree(tag);
+            boolean targetPositionsValid = sourceEntity.getSelfAndPassengers().allMatch(entity -> {
+                double targetY = plan.targetY(entity.getY());
+                return targetY >= targetLevel.getMinBuildHeight() && targetY < targetLevel.getMaxBuildHeight();
+            });
+            if (!targetPositionsValid || capturedEntities + entityTreeSize > remainingCapacity) {
+                skippedEntities += entityTreeSize;
+                continue;
+            }
+
+            transformPreparedEntityTree(tag, plan);
+            templates.add(tag);
+            capturedEntities += entityTreeSize;
+        }
+
+        return new EntityTemplateCapture(List.copyOf(templates), capturedEntities, skippedEntities);
+    }
+
+    private static boolean savePreparedEntityTree(Entity entity, CompoundTag tag) {
+        if (!entity.saveAsPassenger(tag)) {
+            return false;
+        }
+
+        ListTag passengerTags = new ListTag();
+        for (Entity passenger : entity.getPassengers()) {
+            CompoundTag passengerTag = new CompoundTag();
+            if (!savePreparedEntityTree(passenger, passengerTag)) {
+                return false;
+            }
+            passengerTags.add(passengerTag);
+        }
+        if (!passengerTags.isEmpty()) {
+            tag.put(Entity.PASSENGERS_TAG, passengerTags);
+        }
+        return true;
+    }
+
+    private static boolean isAllowedPreparedEntity(Entity entity) {
+        if (!entity.shouldBeSaved() || entity.isRemoved()
+                || entity instanceof ServerPlayer
+                || entity instanceof Painting
+                || entity instanceof ItemFrame
+                || entity instanceof ItemEntity
+                || entity instanceof ExperienceOrb
+                || entity instanceof Projectile
+                || entity instanceof Display) {
+            return false;
+        }
+
+        EntityType<?> type = entity.getType();
+        return type != EntityType.AREA_EFFECT_CLOUD
+                && type != EntityType.ENDER_DRAGON
+                && type != EntityType.END_CRYSTAL
+                && type != EntityType.EVOKER_FANGS
+                && type != EntityType.FALLING_BLOCK
+                && type != EntityType.INTERACTION
+                && type != EntityType.LEASH_KNOT
+                && type != EntityType.LIGHTNING_BOLT
+                && type != EntityType.MARKER
+                && type != EntityType.TNT
+                && type != EntityType.WITHER;
+    }
+
+    private static void transformPreparedEntityTree(CompoundTag tag, PlacementPlan plan) {
+        ListTag pos = tag.getList("Pos", Tag.TAG_DOUBLE);
+        if (pos.size() >= 3) {
+            double sourceX = pos.getDouble(0);
+            double sourceY = pos.getDouble(1);
+            double sourceZ = pos.getDouble(2);
+            tag.put("Pos", newDoubleList(
+                    plan.targetX(sourceX, sourceZ),
+                    plan.targetY(sourceY),
+                    plan.targetZ(sourceX, sourceZ)
+            ));
+        }
+        ListTag motion = tag.getList("Motion", Tag.TAG_DOUBLE);
+        if (motion.size() >= 3) {
+            double sourceMotionX = motion.getDouble(0);
+            double sourceMotionZ = motion.getDouble(2);
+            tag.put("Motion", newDoubleList(
+                    plan.rotatedOffsetX(sourceMotionX, sourceMotionZ),
+                    motion.getDouble(1),
+                    plan.rotatedOffsetZ(sourceMotionX, sourceMotionZ)
+            ));
+        }
+        rotateEntityYaw(tag, plan);
+        transformFenceLeash(tag, plan);
+
+        ListTag passengers = tag.getList(Entity.PASSENGERS_TAG, Tag.TAG_COMPOUND);
+        for (int i = 0; i < passengers.size(); i++) {
+            transformPreparedEntityTree(passengers.getCompound(i), plan);
+        }
+    }
+
+    private static void transformFenceLeash(CompoundTag tag, PlacementPlan plan) {
+        if (!tag.contains("leash", Tag.TAG_INT_ARRAY)) {
+            return;
+        }
+
+        int[] sourceLeash = tag.getIntArray("leash");
+        if (sourceLeash.length != 3) {
+            tag.remove("leash");
+            return;
+        }
+
+        BlockPos targetLeash = plan.targetPos(new BlockPos(sourceLeash[0], sourceLeash[1], sourceLeash[2]));
+        tag.putIntArray("leash", new int[]{targetLeash.getX(), targetLeash.getY(), targetLeash.getZ()});
+    }
+
+    private static EntityTemplateSpawn spawnPreparedEntityTemplates(
+            ServerLevel targetLevel,
+            List<CompoundTag> templates,
+            UUID entityBatchId
+    ) {
+        Map<UUID, UUID> entityIds = new HashMap<>();
+        templates.forEach(template -> collectEntityUuidMappings(template, entityIds));
+
+        int spawnedEntities = 0;
+        int failedEntities = 0;
+        for (CompoundTag template : templates) {
+            CompoundTag spawnTag = template.copy();
+            rewriteEntityTreeUuids(spawnTag, entityIds);
+            try {
+                Entity entity = EntityType.loadEntityRecursive(spawnTag, targetLevel, loaded -> {
+                    loaded.getPersistentData().putBoolean(MATCH_ENTITY_MARKER, true);
+                    loaded.getPersistentData().putUUID(MATCH_ENTITY_BATCH, entityBatchId);
+                    return loaded;
+                });
+                if (entity == null) {
+                    failedEntities += countEntityTree(spawnTag);
+                    continue;
+                }
+
+                int entityTreeSize = Math.toIntExact(entity.getSelfAndPassengers().count());
+                if (targetLevel.tryAddFreshEntityWithPassengers(entity)) {
+                    spawnedEntities += entityTreeSize;
+                } else {
+                    failedEntities += entityTreeSize;
+                }
+            } catch (RuntimeException exception) {
+                int failedTreeSize = countEntityTree(spawnTag);
+                failedEntities += failedTreeSize;
+                WarDayMod.LOGGER.warn("Could not create prepared War Day entity template {}", template.getString("id"), exception);
+            }
+        }
+
+        return new EntityTemplateSpawn(spawnedEntities, failedEntities);
+    }
+
+    private static void collectEntityUuidMappings(CompoundTag tag, Map<UUID, UUID> entityIds) {
+        if (tag.hasUUID(Entity.UUID_TAG)) {
+            entityIds.computeIfAbsent(tag.getUUID(Entity.UUID_TAG), ignored -> UUID.randomUUID());
+        }
+        ListTag passengers = tag.getList(Entity.PASSENGERS_TAG, Tag.TAG_COMPOUND);
+        for (int i = 0; i < passengers.size(); i++) {
+            collectEntityUuidMappings(passengers.getCompound(i), entityIds);
+        }
+    }
+
+    private static void rewriteEntityTreeUuids(CompoundTag tag, Map<UUID, UUID> entityIds) {
+        if (tag.hasUUID(Entity.UUID_TAG)) {
+            UUID originalId = tag.getUUID(Entity.UUID_TAG);
+            tag.putUUID(Entity.UUID_TAG, entityIds.computeIfAbsent(originalId, ignored -> UUID.randomUUID()));
+        } else {
+            tag.putUUID(Entity.UUID_TAG, UUID.randomUUID());
+        }
+
+        if (tag.contains("leash", Tag.TAG_COMPOUND)) {
+            CompoundTag leash = tag.getCompound("leash");
+            if (leash.hasUUID(Entity.UUID_TAG)) {
+                UUID replacement = entityIds.get(leash.getUUID(Entity.UUID_TAG));
+                if (replacement == null) {
+                    tag.remove("leash");
+                } else {
+                    leash.putUUID(Entity.UUID_TAG, replacement);
+                }
+            }
+        }
+
+        ListTag passengers = tag.getList(Entity.PASSENGERS_TAG, Tag.TAG_COMPOUND);
+        for (int i = 0; i < passengers.size(); i++) {
+            rewriteEntityTreeUuids(passengers.getCompound(i), entityIds);
+        }
+    }
+
+    private static int countEntityTree(CompoundTag tag) {
+        int count = 1;
+        ListTag passengers = tag.getList(Entity.PASSENGERS_TAG, Tag.TAG_COMPOUND);
+        for (int i = 0; i < passengers.size(); i++) {
+            count += countEntityTree(passengers.getCompound(i));
+        }
+        return count;
+    }
+
     private static EntityCopyResult copyDecorativeEntities(ServerLevel sourceLevel, ServerLevel targetLevel, PlacementPlan plan) {
         if (sourceLevel == null) {
-            return new EntityCopyResult(0, 0);
+            return new EntityCopyResult(0, 0, 0);
         }
 
         int copied = 0;
         int itemFramesCleared = 0;
-        AABB sourceBounds = plan.sourceEntityBounds(sourceLevel);
-        List<Entity> entities = sourceLevel.getEntities((Entity) null, sourceBounds, WarDayCommands::isAllowedDecorativeEntity);
+        int failed = 0;
+        AABB sourceBounds = plan.sourceEntityBounds(sourceLevel).inflate(HANGING_ENTITY_SCAN_MARGIN);
+        List<Entity> entities = sourceLevel.getEntities(
+                (Entity) null,
+                sourceBounds,
+                entity -> isAllowedDecorativeEntity(entity)
+                        && entity instanceof HangingEntity hangingEntity
+                        && plan.containsSourceChunk(hangingEntity.getPos())
+        );
 
         for (Entity sourceEntity : entities) {
             CompoundTag tag = new CompoundTag();
             if (!sourceEntity.save(tag)) {
+                failed++;
                 continue;
             }
 
@@ -1683,24 +2025,46 @@ public class WarDayCommands {
                     plan.targetZ(sourceEntity.getX(), sourceEntity.getZ())
             ));
             rotateEntityYaw(tag, plan);
+            rotateHangingEntityFacing(tag, plan);
             translateHangingEntityTile(tag, plan);
 
             Optional<Entity> copiedEntity = EntityType.create(tag, targetLevel);
             if (copiedEntity.isEmpty()) {
+                failed++;
                 continue;
             }
 
             Entity entity = copiedEntity.get();
-            targetLevel.addFreshEntity(entity);
-            copied++;
+            if (!(sourceEntity instanceof HangingEntity sourceHanging)
+                    || !(entity instanceof HangingEntity copiedHanging)
+                    || copiedHanging.getDirection() != plan.rotation().rotate(sourceHanging.getDirection())
+                    || sourceEntity instanceof Painting sourcePainting
+                    && (!(entity instanceof Painting copiedPainting)
+                    || !copiedPainting.getVariant().equals(sourcePainting.getVariant()))
+                    || !copiedHanging.survives()) {
+                entity.discard();
+                failed++;
+                continue;
+            }
 
+            boolean clearedItemFrame = entity instanceof ItemFrame;
             if (entity instanceof ItemFrame itemFrame) {
                 itemFrame.setItem(ItemStack.EMPTY, false);
-                itemFramesCleared++;
+            }
+
+            entity.getPersistentData().putBoolean(PREPARED_DECORATIVE_MARKER, true);
+            if (targetLevel.addFreshEntity(entity)) {
+                copied++;
+                if (clearedItemFrame) {
+                    itemFramesCleared++;
+                }
+            } else {
+                entity.discard();
+                failed++;
             }
         }
 
-        return new EntityCopyResult(copied, itemFramesCleared);
+        return new EntityCopyResult(copied, itemFramesCleared, failed);
     }
 
     private static Optional<BlockPos> findSafeSpawnPos(ServerLevel level, PlacementPlan plan) {
@@ -1796,6 +2160,20 @@ public class WarDayCommands {
         }
 
         rotation.set(0, net.minecraft.nbt.FloatTag.valueOf(rotation.getFloat(0) + plan.rotationDegrees()));
+    }
+
+    private static void rotateHangingEntityFacing(CompoundTag tag, PlacementPlan plan) {
+        if (tag.contains("facing", Tag.TAG_BYTE)) {
+            Direction sourceFacing = Direction.from2DDataValue(tag.getByte("facing"));
+            Direction targetFacing = plan.rotation().rotate(sourceFacing);
+            tag.putByte("facing", (byte) targetFacing.get2DDataValue());
+        }
+
+        if (tag.contains("Facing", Tag.TAG_BYTE)) {
+            Direction sourceFacing = Direction.from3DDataValue(tag.getByte("Facing"));
+            Direction targetFacing = plan.rotation().rotate(sourceFacing);
+            tag.putByte("Facing", (byte) targetFacing.get3DDataValue());
+        }
     }
 
     private static void translateHangingEntityTile(CompoundTag tag, PlacementPlan plan) {
@@ -2057,6 +2435,39 @@ public class WarDayCommands {
             );
         }
 
+        private AABB targetEntityBounds(ServerLevel targetLevel) {
+            TargetFootprint footprint = targetFootprint();
+            return new AABB(
+                    footprint.minX(),
+                    targetLevel.getMinBuildHeight(),
+                    footprint.minZ(),
+                    footprint.maxX() + 1.0D,
+                    targetLevel.getMaxBuildHeight(),
+                    footprint.maxZ() + 1.0D
+            );
+        }
+
+        private boolean containsSourceChunk(BlockPos sourcePos) {
+            return cluster.contains(new ChunkDimPos(dimension, new ChunkPos(sourcePos)));
+        }
+
+        private boolean containsTargetBlock(BlockPos targetPos) {
+            return containsSourceChunk(sourcePos(targetPos));
+        }
+
+        private BlockPos sourcePos(BlockPos targetPos) {
+            int targetOffsetX = targetPos.getX() - targetAnchorPos.getX();
+            int targetOffsetY = targetPos.getY() - targetAnchorPos.getY();
+            int targetOffsetZ = targetPos.getZ() - targetAnchorPos.getZ();
+            BlockPos sourceOffset = switch (rotation()) {
+                case NONE -> new BlockPos(targetOffsetX, targetOffsetY, targetOffsetZ);
+                case CLOCKWISE_90 -> new BlockPos(targetOffsetZ, targetOffsetY, -targetOffsetX);
+                case CLOCKWISE_180 -> new BlockPos(-targetOffsetX, targetOffsetY, -targetOffsetZ);
+                case COUNTERCLOCKWISE_90 -> new BlockPos(-targetOffsetZ, targetOffsetY, targetOffsetX);
+            };
+            return anchorPos.offset(sourceOffset);
+        }
+
         private double targetY(double sourceY) {
             return sourceY + targetAnchorPos.getY() - anchorPos.getY();
         }
@@ -2175,7 +2586,16 @@ public class WarDayCommands {
     private record CopyResult(int blocksCopied, int blockEntitiesCopied, int containersCleared) {
     }
 
-    private record EntityCopyResult(int entitiesCopied, int itemFramesCleared) {
+    private record EntityCopyResult(int entitiesCopied, int itemFramesCleared, int entitiesFailed) {
+    }
+
+    private record EntityTemplateCapture(List<CompoundTag> templates, int entityCount, int skippedCount) {
+        private static EntityTemplateCapture empty() {
+            return new EntityTemplateCapture(List.of(), 0, 0);
+        }
+    }
+
+    private record EntityTemplateSpawn(int spawnedCount, int failedCount) {
     }
 
     private record ParticipantRespawn(ServerLevel level, BlockPos spawnPos, Item matchBlock) {

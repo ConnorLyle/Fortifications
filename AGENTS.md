@@ -1,0 +1,38 @@
+# Agent Instructions
+
+## Repository scope
+
+- The active War Day project is `Warday-Mod/Warday`.
+- The Fortifications project is `Fortifications Mod/Fortifications Mod`.
+- Read `HANDOFF.md` before changing either project; it describes the current implementation, known risks, and build commands.
+- Preserve unrelated user changes. Do not reset, discard, or overwrite work outside the task being handled.
+
+## Work queue protocol
+
+- The canonical backlog is [`WARDAY_TODO.md`](WARDAY_TODO.md). Read it before choosing or implementing War Day work.
+- Treat unchecked items in `WARDAY_TODO.md` as the active backlog. Do not maintain a second copy of the queue in this file, `HANDOFF.md`, or source comments.
+- Reference a queue item in agent notes, plans, and handoffs using its section and exact task text so another agent can locate it unambiguously.
+- When the user asks to bring up, discuss, start, or work on a backlog item, first give the user a pre-implementation assessment before editing code or changing project state. The assessment must include:
+  - the feasible implementation approaches and their tradeoffs;
+  - expected technical or gameplay challenges and edge cases;
+  - dependencies or interactions with other backlog items;
+  - a recommended approach and any useful scope or design suggestions;
+  - how the change should be verified.
+- Do not begin implementation until that assessment has been presented. If the user's request is only to bring up or discuss the task, stop after the assessment and wait for an explicit request to implement it.
+- Before starting an item, inspect the relevant implementation and note dependencies on other queue items.
+- Keep an item unchecked while it is only partially implemented, compiles without functional verification, or still has unresolved edge cases.
+- Once an item is implemented and verified, edit `WARDAY_TODO.md`: change `- [ ] Description` to `- [x] ~~Description~~` and add a short indented completion note with the verification performed.
+- If an apparent fix is supplied by another queue item, verify the behavior separately before striking it off.
+- Do not delete completed items. The struck-through entries are the project history.
+- When implementation cannot be verified in-game, record the build/test evidence and remaining manual test explicitly; do not strike off the item yet.
+
+## Verification expectations
+
+- Build the changed project after each completed fix. Warday currently expects `gradle build` from `Warday-Mod/Warday`; Fortifications uses `.\gradlew.bat build` from `Fortifications Mod/Fortifications Mod`.
+- After every successful build, update the corresponding distributable jar in `MYTH MODS FOR DEREK` before reporting the build complete:
+  - copy `Warday-Mod/Warday/build/libs/warday-1.0.0.jar` to `MYTH MODS FOR DEREK/warday-1.0.0.jar` after a Warday build;
+  - copy `Fortifications Mod/Fortifications Mod/build/libs/fortifications-1.0.0.jar` to `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` after a Fortifications build.
+- Replace only the matching jar; do not alter other files in `MYTH MODS FOR DEREK`. Verify the source and copied jar have the same size or cryptographic hash, and mention the refreshed distributable in the completion report.
+- Prefer focused automated coverage for state transitions and calculations, but do not treat compilation alone as proof of Minecraft runtime behavior.
+- For gameplay changes, record a concise manual test recipe and result beneath the completed queue item.
+- Recheck match end, death/respawn, logout/reconnect, and server-restart behavior whenever a change touches persisted event or player state.
