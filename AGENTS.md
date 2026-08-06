@@ -5,12 +5,20 @@
 - The active War Day project is `Warday-Mod/Warday`.
 - The Fortifications project is `Fortifications Mod/Fortifications Mod`.
 - Read `HANDOFF.md` before changing either project; it describes the current implementation, known risks, and build commands.
+- Keep `HANDOFF.md` current whenever substantive work changes implementation state, verification evidence, known risks, active/blocked work, or the recommended next steps. Remove or revise stale statements instead of only appending new notes.
 - Preserve unrelated user changes. Do not reset, discard, or overwrite work outside the task being handled.
+
+## Handoff maintenance
+
+- Update `HANDOFF.md` before reporting substantive project work complete or handing the repository to another agent.
+- Record what changed, what was actually verified, what still needs manual or automated verification, and any new risks or dependencies.
+- When work relates to the War Day backlog, identify the item by its `WARDAY_TODO.md` section and exact task text so the handoff can be reconciled with the canonical queue.
+- Keep `HANDOFF.md` concise and current-state focused. Do not copy the backlog checklist into it; link to `WARDAY_TODO.md` and document only the state needed for the next agent to continue safely.
 
 ## Work queue protocol
 
 - The canonical backlog is [`WARDAY_TODO.md`](WARDAY_TODO.md). Read it before choosing or implementing War Day work.
-- Treat unchecked items in `WARDAY_TODO.md` as the active backlog. Do not maintain a second copy of the queue in this file, `HANDOFF.md`, or source comments.
+- Treat unchecked items in `WARDAY_TODO.md` as the active backlog. Do not maintain a second copy of the backlog checklist in this file, `HANDOFF.md`, or source comments. Workflow guidance may be repeated in `HANDOFF.md`, but task status lives only in `WARDAY_TODO.md`.
 - Reference a queue item in agent notes, plans, and handoffs using its section and exact task text so another agent can locate it unambiguously.
 - When the user asks to bring up, discuss, start, or work on a backlog item, first give the user a pre-implementation assessment before editing code or changing project state. The assessment must include:
   - the feasible implementation approaches and their tradeoffs;

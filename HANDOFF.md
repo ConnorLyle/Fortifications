@@ -1,3 +1,45 @@
+# 0. Agent Workflow and Canonical TODO Rules
+
+## Required reading order
+
+1. Read `AGENTS.md` for repository-wide instructions.
+2. Read this `HANDOFF.md` for the current implementation, active or blocked work, known risks, verification state, and next steps.
+3. Before choosing, discussing, or implementing War Day work, read `WARDAY_TODO.md` in full. It is the canonical backlog; unchecked items are the active queue, while completed struck-through items and their notes are project history and may describe dependencies or prior verification.
+4. Inspect the relevant implementation before starting an item and check nearby TODO entries for dependencies, overlap, or behavior that requires separate verification.
+
+## How to use `WARDAY_TODO.md`
+
+- Do not copy or maintain the backlog checklist in this handoff, `AGENTS.md`, or source comments. Task status belongs only in `WARDAY_TODO.md`.
+- Refer to a queue item in plans, notes, and handoffs by its section and exact task text so another agent can locate it unambiguously.
+- Treat implementation notes beneath an unchecked item as partial-work evidence, not proof that the item is complete.
+- Keep an item unchecked while it is only partially implemented, merely compiles, lacks required functional or in-game verification, or has unresolved edge cases.
+- If one queue item appears to fix another, verify the second behavior independently before marking it complete.
+- Never delete completed items. Preserve them as struck-through project history.
+
+## Required assessment before implementation
+
+When the user asks to bring up, discuss, start, or work on a backlog item, provide a pre-implementation assessment before editing code or changing project state. Include:
+
+- feasible implementation approaches and their tradeoffs;
+- expected technical or gameplay challenges and edge cases;
+- dependencies or interactions with other backlog items;
+- a recommended approach plus useful scope or design suggestions;
+- how the change should be verified.
+
+Do not begin implementation until that assessment has been presented. If the user only asks to bring up or discuss an item, stop after the assessment and wait for an explicit request to implement it.
+
+## Completing and documenting a queue item
+
+- Once an item is implemented and verified, change `- [ ] Description` in `WARDAY_TODO.md` to `- [x] ~~Description~~` and add a short indented completion note stating the verification performed.
+- Build the changed project after each completed fix: run `gradle build` from `Warday-Mod/Warday` for Warday, or `.\gradlew.bat build` from `Fortifications Mod/Fortifications Mod` for Fortifications.
+- After a successful Warday build, replace only `MYTH MODS FOR DEREK/warday-1.0.0.jar` with `Warday-Mod/Warday/build/libs/warday-1.0.0.jar`. After a successful Fortifications build, replace only `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` with `Fortifications Mod/Fortifications Mod/build/libs/fortifications-1.0.0.jar`.
+- Verify that each refreshed distributable matches its build artifact by file size or cryptographic hash, and mention the refreshed JAR in the completion report. Do not alter other files in `MYTH MODS FOR DEREK`.
+- Prefer focused automated coverage for calculations and state transitions, but never treat compilation alone as proof of Minecraft runtime behavior.
+- For gameplay changes, include a concise manual test recipe and result beneath the completed queue item.
+- If in-game verification is unavailable, record the build/test evidence and the remaining manual test explicitly, and leave the item unchecked.
+- Recheck match end, death/respawn, logout/reconnect, and server-restart behavior whenever work touches persisted event or player state.
+- Keep this `HANDOFF.md` updated as substantive work changes implementation state, verification evidence, active or blocked work, risks, dependencies, or next steps. Revise stale statements rather than accumulating contradictory history.
+
 # 1. Current State of the Build
 
 ## Mission Accomplished
@@ -26,7 +68,7 @@
   - Copied decorative entity positions and yaw are rotated, and painting/item-frame tile coordinates are translated through the same rotated block-position path.
   - `/warday prepare` now reports the rotation plan, and `/warday prepare confirm` no longer says copied bases are unrotated.
 - `WarDayState` persists prepared state, active state, copied nexus position, attacker spawn position, configured dimension, team labels, and player snapshots in Minecraft `SavedData`.
-- Nexus destruction in the active War Day dimension ends the event and restores online players.
+- Nexus destruction in the active War Day dimension starts the persisted victory-fanfare phase; restoration follows when the configured fanfare finishes, while `/warday end` remains an immediate operator override.
 - Respawn handling exists for active participants: players briefly enter spectator mode, are teleported above their spawn, then restored after `respawnDelaySeconds`.
 - Active-match lifecycle edge cases have been implemented, including login handling during an active match, deferred restoration after the match, persisted pending respawn/death state, and active-role reassignment.
 - `/warday validate` and `/warday scan` now narrow marker scanning to loaded claimed chunks owned by the configured teams within the validation radius instead of walking the entire full-height radius volume.
@@ -38,42 +80,30 @@
 
 ## Active/Halted Work
 
-- Recent active work is in `Warday-Mod/Warday/src/main/java/com/trove/warday/WarDayCommands.java`.
-- Defender base rotation has been implemented at source level but has not been compiled or play-tested yet in this Codex shell.
-- Claim-scoped marker scanning and transformed claim-shape destination clearing have been implemented at source level but remain uncompiled in this shell.
-- Verification was blocked because:
-  - `gradle build` from `Warday-Mod/Warday` failed because `gradle` is not on PATH.
-  - Reusing the Fortifications Gradle wrapper with `-p Warday-Mod/Warday build` failed because `JAVA_HOME` is not set and `java` is not on PATH.
-  - A recursive local search from usual install roots did not find `java.exe`.
-  - `git diff`/`git status` could not be obtained because `git` is not on PATH.
-- Source-level sanity checks were performed:
-  - Brace count matched in `WarDayCommands.java`.
-  - No stale references were found for removed one-axis transform helpers such as `targetBlockX`, `targetBlockY`, `targetBlockZ`, `sourceXForZ`, or `sourceZForX`.
+- Active queue item: `WARDAY_TODO.md` section **Player and entity state**, exact task **“Make non-player entities carry over into the War Day dimension and define which entity categories must be copied or transferred.”**
+- Source review on 2026-08-06 found that continuous entity coordinates were rotated around the anchor block corner, which could shift entities into an adjacent transformed block. `PlacementPlan.targetX/targetZ` now rotate around the anchor block center.
+- Focused calculation verification checked 900 points across all four rotations and confirmed that every entity point remains inside the block produced by the integer block transform.
+- `gradle build --no-daemon --no-problems-report` succeeded on 2026-08-06. The build artifact and refreshed `MYTH MODS FOR DEREK/warday-1.0.0.jar` are both 109,685 bytes with SHA-256 `05277987197345962CA438506ED73E64AD9EEAD4E34CDE7DCBD14D75B4E183EA`.
+- A preceding `gradle clean build --no-daemon` attempt compiled the source but encountered a transient Windows access denial in NeoForge's generated `build/tmp` output; a normal retry compiled and produced the JAR, then hit a OneDrive collision replacing Gradle's generated problems report. Disabling that optional report produced the clean successful build above.
+- The entity task and nested tamed-entity task remain unchecked because no Minecraft runtime test was performed. NBT fidelity, AI/tame behavior, leash recreation, passenger trees, entity caps, cleanup, and restart behavior remain manual-verification requirements.
 - The rotation implementation assumes the defender target facing is east because the defender anchor is `[0, warDayBaseY, 0]` and the attacker anchor is `[baseSpacingBlocks, warDayBaseY, 0]`.
 - The most likely half-finished area is Warday gameplay completion, not compilation:
-  - Defender base rotation source code is present, but it still needs a real compile and in-game validation.
+  - Defender base rotation compiles and has calculation-level coverage, but still needs in-game validation.
   - Attacker spawn areas remain unrotated because they do not have a forward marker/orientation marker.
-  - Only decorative entities `Painting` and `ItemFrame` are copied.
+  - Persistent non-player entities use the prepared-template path; decorative `Painting` and `ItemFrame` entities use a separate copy path.
   - Item frames are copied but their items are cleared.
   - Containers are copied structurally but their contents are cleared.
   - Prepared/copied War Day claim shapes are cleared over the source dimension's mapped vertical range before paste.
   - Team B can be absent for validation/prepare one-team testing, but `/warday start` requires both configured teams.
-- I could not obtain `git status` because `git` is not available in the PowerShell environment used by Codex. Dirty/untracked files should be checked manually from a developer shell with Git installed.
+- The worktree contains pre-existing uncommitted Warday implementation and documentation changes. Preserve them and inspect `git diff` before further edits.
 
 ## Next Immediate Steps
 
-1. From a developer shell with Java and Gradle available, compile Warday:
-   - `cd "C:\Users\Connor.Lyle\Documents\GitHub\Fortifications\Warday-Mod\Warday"`
-   - `gradle build`
-2. Review `WarDayCommands.java` with `git diff` once Git is available, especially the `PlacementPlan` rotation math and NBT entity yaw/tile-coordinate handling.
-3. Manually play-test defender base rotation on a local NeoForge server with FTB Teams and FTB Chunks installed:
-   - create teams and claims,
-   - place a defender nexus and forward marker,
-   - test forward marker facings north, south, east, and west,
-   - run `/warday validate`, `/warday prepare`, and `/warday prepare confirm`,
-   - confirm the copied defender marker/base faces east toward the attacker side.
-4. Manually play-test the full Warday flow: run `/warday start`, break the copied nexus, and confirm restoration.
-5. Add focused automated tests for rotation mapping, rotated footprints, and claim-scoped destination clearing.
+1. Run the entity carryover manual matrix from the first `WARDAY_TODO.md` item: representative vanilla and modded entities, named/damaged/sitting and following tamed wolves, vehicle/passenger trees, fence and entity leashes, all four defender rotations, an unclaimed-hole entity, and the configured entity cap.
+2. Run prepare/start/end twice and test a server restart during an active match. Confirm originals remain unchanged, owner/tame/NBT state survives, and no temporary or stale duplicates remain.
+3. If the matrix passes, record the actual runtime results under both the main entity item and nested tamed-entity item, then strike them through. If anything fails, keep them unchecked and document/fix the exact failure.
+4. Continue broader manual testing for defender base rotation, painting placement/copying, inventory restoration, fanfare lifecycle, death/respawn, logout/reconnect, and server restart as required by their respective unchecked queue items.
+5. Add project-level automated tests or GameTests for rotation mapping, entity-template state transitions, rotated footprints, and claim-scoped destination clearing.
 
 # 2. Architectural Decisions & Patterns
 

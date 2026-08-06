@@ -14,6 +14,7 @@ public final class WarDayConfig {
     public static final ModConfigSpec.IntValue MAX_PREPARED_ENTITIES;
     public static final ModConfigSpec.IntValue RESPAWN_DELAY_SECONDS;
     public static final ModConfigSpec.IntValue MATCH_DURATION_SECONDS;
+    public static final ModConfigSpec.IntValue VICTORY_FANFARE_SECONDS;
     public static final ModConfigSpec.IntValue MAP_HALF_SIZE_BLOCKS;
     public static final ModConfigSpec.IntValue DIG_LIMIT_BLOCKS;
     public static final ModConfigSpec.IntValue DIG_LIMIT_WINDOW_SECONDS;
@@ -65,6 +66,9 @@ public final class WarDayConfig {
         MATCH_DURATION_SECONDS = builder
                 .comment("Maximum active War Day attack length in seconds.")
                 .defineInRange("matchDurationSeconds", 900, 60, 7200);
+        VICTORY_FANFARE_SECONDS = builder
+                .comment("Seconds to celebrate the winning team after combat ends before restoring players. Set to 0 to skip the delay.")
+                .defineInRange("victoryFanfareSeconds", 30, 0, 300);
         MAP_HALF_SIZE_BLOCKS = builder
                 .comment("Half-size of the square match bounds centered on the defending nexus. 125 gives a 250x250 map.")
                 .defineInRange("mapHalfSizeBlocks", 125, 16, 2048);

@@ -31,6 +31,11 @@ public class WarDayState extends SavedData {
     private String attackerTeam = "";
     private boolean active;
     private long matchEndGameTime;
+    private boolean fanfareActive;
+    private long fanfareEndGameTime;
+    private String winningTeam = "";
+    private String victoryReason = "";
+    private String victoryActor = "";
     private boolean originalKeepInventory;
     private boolean keepInventoryCaptured;
     private double originalWorldBorderCenterX;
@@ -67,6 +72,11 @@ public class WarDayState extends SavedData {
         }
         state.active = tag.getBoolean("Active");
         state.matchEndGameTime = tag.getLong("MatchEndGameTime");
+        state.fanfareActive = state.active && tag.getBoolean("FanfareActive");
+        state.fanfareEndGameTime = tag.getLong("FanfareEndGameTime");
+        state.winningTeam = tag.getString("WinningTeam");
+        state.victoryReason = tag.getString("VictoryReason");
+        state.victoryActor = tag.getString("VictoryActor");
         state.originalKeepInventory = tag.getBoolean("OriginalKeepInventory");
         state.keepInventoryCaptured = tag.getBoolean("KeepInventoryCaptured");
         state.originalWorldBorderCenterX = tag.getDouble("OriginalWorldBorderCenterX");
@@ -144,6 +154,11 @@ public class WarDayState extends SavedData {
         }
         tag.putBoolean("Active", active);
         tag.putLong("MatchEndGameTime", matchEndGameTime);
+        tag.putBoolean("FanfareActive", fanfareActive);
+        tag.putLong("FanfareEndGameTime", fanfareEndGameTime);
+        tag.putString("WinningTeam", winningTeam);
+        tag.putString("VictoryReason", victoryReason);
+        tag.putString("VictoryActor", victoryActor);
         tag.putBoolean("OriginalKeepInventory", originalKeepInventory);
         tag.putBoolean("KeepInventoryCaptured", keepInventoryCaptured);
         tag.putDouble("OriginalWorldBorderCenterX", originalWorldBorderCenterX);
@@ -209,6 +224,11 @@ public class WarDayState extends SavedData {
     ) {
         active = true;
         this.matchEndGameTime = matchEndGameTime;
+        fanfareActive = false;
+        fanfareEndGameTime = 0L;
+        winningTeam = "";
+        victoryReason = "";
+        victoryActor = "";
         this.originalKeepInventory = originalKeepInventory;
         this.keepInventoryCaptured = true;
         this.originalWorldBorderCenterX = originalWorldBorderCenterX;
@@ -294,9 +314,29 @@ public class WarDayState extends SavedData {
         }
     }
 
+    public boolean beginFanfare(long fanfareEndGameTime, String winningTeam, String victoryReason, String victoryActor) {
+        if (!active || fanfareActive) {
+            return false;
+        }
+        fanfareActive = true;
+        this.fanfareEndGameTime = fanfareEndGameTime;
+        this.winningTeam = winningTeam == null ? "" : winningTeam;
+        this.victoryReason = victoryReason == null ? "" : victoryReason;
+        this.victoryActor = victoryActor == null ? "" : victoryActor;
+        deathCounts.clear();
+        pendingRespawnTicks.clear();
+        setDirty();
+        return true;
+    }
+
     public void end() {
         active = false;
         matchEndGameTime = 0L;
+        fanfareActive = false;
+        fanfareEndGameTime = 0L;
+        winningTeam = "";
+        victoryReason = "";
+        victoryActor = "";
         keepInventoryCaptured = false;
         worldBorderCaptured = false;
         nexusMarkerId = null;
@@ -320,6 +360,14 @@ public class WarDayState extends SavedData {
 
     public boolean isActive() {
         return active;
+    }
+
+    public boolean isCombatActive() {
+        return active && !fanfareActive;
+    }
+
+    public boolean isFanfareActive() {
+        return active && fanfareActive;
     }
 
     public Optional<UUID> matchEntityBatchId() {
@@ -348,6 +396,22 @@ public class WarDayState extends SavedData {
 
     public long matchEndGameTime() {
         return matchEndGameTime;
+    }
+
+    public long fanfareEndGameTime() {
+        return fanfareEndGameTime;
+    }
+
+    public String winningTeam() {
+        return winningTeam;
+    }
+
+    public String victoryReason() {
+        return victoryReason;
+    }
+
+    public String victoryActor() {
+        return victoryActor;
     }
 
     public boolean originalKeepInventory() {

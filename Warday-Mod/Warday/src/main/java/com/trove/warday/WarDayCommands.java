@@ -23,11 +23,17 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.Container;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Display;
@@ -464,10 +470,26 @@ public class WarDayCommands {
             source.sendSuccess(() -> message(ChatFormatting.GRAY,
                     "Prepared non-player entity groups: " + state.preparedEntityTemplates().size()), false);
             if (state.isActive()) {
-                long secondsRemaining = Math.max(0L, (state.matchEndGameTime() - source.getLevel().getGameTime()) / 20L);
-                source.sendSuccess(() -> message(ChatFormatting.GRAY, "Match time remaining: " + secondsRemaining + " seconds"), false);
+                long gameTime = warDayLevel(source.getServer(), state)
+                        .map(ServerLevel::getGameTime)
+                        .orElse(source.getLevel().getGameTime());
+                if (state.isFanfareActive()) {
+                    long secondsRemaining = secondsRemaining(state.fanfareEndGameTime(), gameTime);
+                    source.sendSuccess(() -> message(ChatFormatting.GOLD,
+                            "Victory fanfare: " + state.winningTeam() + " wins; returning players in "
+                                    + secondsRemaining + " seconds"), false);
+                } else {
+                    long secondsRemaining = secondsRemaining(state.matchEndGameTime(), gameTime);
+                    source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                            "Match time remaining: " + secondsRemaining + " seconds"), false);
+                }
             }
-            source.sendSuccess(() -> message(ChatFormatting.GREEN, "Next command: /warday start"), false);
+            if (state.isActive()) {
+                source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                        "Operator override: /warday end immediately restores players"), false);
+            } else {
+                source.sendSuccess(() -> message(ChatFormatting.GREEN, "Next command: /warday start"), false);
+            }
         } else {
             source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Next command: /warday prepare confirm"), false);
         }
@@ -650,13 +672,18 @@ public class WarDayCommands {
             return;
         }
 
+        WarDayState state = WarDayState.get(player.getServer());
+        if (state.isFanfareActive() && state.savedPlayer(player.getUUID()).isPresent()) {
+            applyFanfareRole(player, state);
+            return;
+        }
+
         Optional<ParticipantRespawn> respawn = participantRespawn(player);
         if (respawn.isEmpty()) {
             giveRespawnMatchBlocks(player);
             return;
         }
 
-        WarDayState state = WarDayState.get(player.getServer());
         ParticipantRespawn participant = respawn.get();
         int deathCount = state.incrementDeathCount(player.getUUID());
         DEATH_COUNTS.put(player.getUUID(), deathCount);
@@ -683,6 +710,15 @@ public class WarDayCommands {
 
         WarDayState state = WarDayState.get(player.getServer());
         if (state.isActive()) {
+            if (state.isFanfareActive()) {
+                if (state.savedPlayer(player.getUUID()).isPresent()) {
+                    applyFanfareRole(player, state);
+                } else {
+                    player.sendSystemMessage(message(ChatFormatting.YELLOW,
+                            "War Day is in its victory celebration. You will remain outside this match."));
+                }
+                return;
+            }
             if (state.savedPlayer(player.getUUID()).isEmpty()) {
                 try {
                     state.savePlayerIfAbsent(player.getUUID(), snapshotPlayer(player));
@@ -716,14 +752,20 @@ public class WarDayCommands {
         }
 
         Optional<ServerLevel> warDayLevel = warDayLevel(event.getServer(), state);
+        if (state.isFanfareActive()) {
+            warDayLevel.ifPresent(level -> tickVictoryFanfare(event.getServer(), level, state));
+            return;
+        }
+
         if (warDayLevel.isPresent() && state.matchEndGameTime() > 0L && warDayLevel.get().getGameTime() >= state.matchEndGameTime()) {
-            int restored = endActiveWarDay(event.getServer(), state);
             String defenderTeam = state.defenderTeam().isBlank() ? WarDayConfig.TEAM_A_NAME.get() : state.defenderTeam();
-            event.getServer().getPlayerList().broadcastSystemMessage(
-                    message(ChatFormatting.GOLD,
-                            "War Day complete: " + defenderTeam + " defended the nexus until time expired. Restored gamemodes for "
-                                    + restored + " online players."),
-                    false
+            beginVictoryFanfare(
+                    event.getServer(),
+                    warDayLevel.get(),
+                    state,
+                    defenderTeam,
+                    "The nexus survived until time expired.",
+                    ""
             );
             return;
         }
@@ -802,6 +844,12 @@ public class WarDayCommands {
             return;
         }
 
+        if (state.isFanfareActive()) {
+            event.setCanceled(true);
+            player.displayClientMessage(message(ChatFormatting.GOLD, "Combat has ended. Enjoy the victory celebration!"), true);
+            return;
+        }
+
         Optional<ParticipantRespawn> participant = participantRespawn(player);
         if (participant.isEmpty()) {
             event.setCanceled(true);
@@ -833,14 +881,15 @@ public class WarDayCommands {
             return;
         }
 
-        int restored = endActiveWarDay(level.getServer(), state);
         String breaker = player.getName().getString();
         String attackerTeam = state.attackerTeam().isBlank() ? WarDayConfig.TEAM_B_NAME.get() : state.attackerTeam();
-        level.getServer().getPlayerList().broadcastSystemMessage(
-                message(ChatFormatting.GOLD,
-                        "War Day complete: " + attackerTeam + " destroyed the nexus. Final break by " + breaker
-                                + ". Restored gamemodes for " + restored + " online players."),
-                false
+        beginVictoryFanfare(
+                level.getServer(),
+                level,
+                state,
+                attackerTeam,
+                breaker + " destroyed the nexus.",
+                breaker
         );
     }
 
@@ -855,6 +904,14 @@ public class WarDayCommands {
             return;
         }
         if (!level.dimension().location().toString().equals(state.warDayDimension())) {
+            return;
+        }
+
+        if (state.isFanfareActive()) {
+            event.setCanceled(true);
+            if (event.getEntity() instanceof ServerPlayer player) {
+                player.displayClientMessage(message(ChatFormatting.GOLD, "Building is disabled during the victory celebration."), true);
+            }
             return;
         }
 
@@ -901,6 +958,11 @@ public class WarDayCommands {
             return;
         }
 
+        if (state.isFanfareActive()) {
+            event.getAffectedBlocks().clear();
+            return;
+        }
+
         BlockPos nexusPos = state.copiedNexusPos().get();
         event.getAffectedBlocks().removeIf(pos -> isInNexusShell(pos, nexusPos));
     }
@@ -922,6 +984,117 @@ public class WarDayCommands {
         if (isInNexusShell(event.getPos(), state.copiedNexusPos().get())) {
             event.setCanceled(true);
         }
+    }
+
+    private static boolean beginVictoryFanfare(
+            MinecraftServer server,
+            ServerLevel level,
+            WarDayState state,
+            String winningTeam,
+            String victoryReason,
+            String victoryActor
+    ) {
+        long fanfareEndGameTime = level.getGameTime() + WarDayConfig.VICTORY_FANFARE_SECONDS.getAsInt() * 20L;
+        if (!state.beginFanfare(fanfareEndGameTime, winningTeam, victoryReason, victoryActor)) {
+            return false;
+        }
+
+        PENDING_RESPAWNS.clear();
+        DEATH_COUNTS.clear();
+        DIG_HISTORY.clear();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (state.savedPlayer(player.getUUID()).isPresent()) {
+                applyFanfareRole(player, state);
+            } else {
+                sendVictoryTitle(player, state);
+            }
+        }
+        playVictoryEffects(level, state);
+
+        int durationSeconds = WarDayConfig.VICTORY_FANFARE_SECONDS.getAsInt();
+        server.getPlayerList().broadcastSystemMessage(
+                message(ChatFormatting.GOLD,
+                        "War Day victory: " + winningTeam + "! " + victoryReason
+                                + " Players return in " + durationSeconds + " seconds."),
+                false
+        );
+        return true;
+    }
+
+    private static void tickVictoryFanfare(MinecraftServer server, ServerLevel level, WarDayState state) {
+        long gameTime = level.getGameTime();
+        if (gameTime >= state.fanfareEndGameTime()) {
+            String winningTeam = state.winningTeam();
+            String victoryReason = state.victoryReason();
+            int restored = endActiveWarDay(server, state);
+            server.getPlayerList().broadcastSystemMessage(
+                    message(ChatFormatting.GOLD,
+                            "War Day complete: " + winningTeam + " won. " + victoryReason
+                                    + " Restored " + restored + " online players."),
+                    false
+            );
+            return;
+        }
+
+        if (gameTime % 20L == 0L) {
+            long secondsRemaining = secondsRemaining(state.fanfareEndGameTime(), gameTime);
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                if (state.savedPlayer(player.getUUID()).isEmpty()) {
+                    continue;
+                }
+                if (player.gameMode.getGameModeForPlayer() != GameType.SPECTATOR) {
+                    player.setGameMode(GameType.SPECTATOR);
+                }
+                player.displayClientMessage(message(ChatFormatting.GOLD,
+                        state.winningTeam() + " wins! Returning in " + secondsRemaining + " seconds."), true);
+            }
+        }
+
+        if (gameTime % 40L == 0L) {
+            playVictoryEffects(level, state);
+        }
+    }
+
+    private static void applyFanfareRole(ServerPlayer player, WarDayState state) {
+        player.setGameMode(GameType.SPECTATOR);
+        warDayLevel(player.getServer(), state).ifPresent(level -> {
+            if (player.level() != level) {
+                BlockPos focus = state.copiedNexusPos().orElse(BlockPos.ZERO).offset(0, 8, 0);
+                teleportPlayer(player, level, focus);
+            }
+        });
+        sendVictoryTitle(player, state);
+        long gameTime = warDayLevel(player.getServer(), state)
+                .map(ServerLevel::getGameTime)
+                .orElse(0L);
+        long remaining = secondsRemaining(state.fanfareEndGameTime(), gameTime);
+        player.sendSystemMessage(message(ChatFormatting.GOLD,
+                "Combat has ended. " + state.winningTeam() + " won; returning in " + remaining + " seconds."));
+    }
+
+    private static void sendVictoryTitle(ServerPlayer player, WarDayState state) {
+        player.connection.send(new ClientboundSetTitlesAnimationPacket(10, 100, 20));
+        player.connection.send(new ClientboundSetTitleTextPacket(
+                message(ChatFormatting.GOLD, state.winningTeam() + " wins!")));
+        player.connection.send(new ClientboundSetSubtitleTextPacket(
+                message(ChatFormatting.YELLOW, state.victoryReason())));
+    }
+
+    private static void playVictoryEffects(ServerLevel level, WarDayState state) {
+        if (state.copiedNexusPos().isEmpty()) {
+            return;
+        }
+        BlockPos nexusPos = state.copiedNexusPos().get();
+        double x = nexusPos.getX() + 0.5D;
+        double y = nexusPos.getY() + 2.0D;
+        double z = nexusPos.getZ() + 0.5D;
+        level.sendParticles(ParticleTypes.FIREWORK, x, y, z, 80, 5.0D, 3.0D, 5.0D, 0.15D);
+        level.sendParticles(ParticleTypes.HAPPY_VILLAGER, x, y, z, 40, 4.0D, 2.0D, 4.0D, 0.1D);
+        level.playSound(null, nexusPos, SoundEvents.FIREWORK_ROCKET_BLAST, SoundSource.MASTER, 2.0F, 1.0F);
+    }
+
+    private static long secondsRemaining(long endGameTime, long gameTime) {
+        return Math.max(0L, (endGameTime - gameTime + 19L) / 20L);
     }
 
     private static int endActiveWarDay(MinecraftServer server, WarDayState state) {
@@ -1027,7 +1200,7 @@ public class WarDayCommands {
 
     private static void giveRespawnMatchBlocks(ServerPlayer player) {
         WarDayState state = WarDayState.get(player.getServer());
-        if (!state.isActive() || !FTBTeamsAPI.api().isManagerLoaded()) {
+        if (!state.isCombatActive() || !FTBTeamsAPI.api().isManagerLoaded()) {
             return;
         }
 
@@ -1521,7 +1694,7 @@ public class WarDayCommands {
         }
 
         WarDayState state = WarDayState.get(server);
-        if (!state.isActive()) {
+        if (!state.isCombatActive()) {
             return Optional.empty();
         }
 
@@ -2731,11 +2904,17 @@ public class WarDayCommands {
         }
 
         private double targetX(double sourceX, double sourceZ) {
-            return targetAnchorPos.getX() + rotatedOffsetX(sourceX - anchorPos.getX(), sourceZ - anchorPos.getZ());
+            double sourceCenterX = anchorPos.getX() + 0.5D;
+            double sourceCenterZ = anchorPos.getZ() + 0.5D;
+            return targetAnchorPos.getX() + 0.5D
+                    + rotatedOffsetX(sourceX - sourceCenterX, sourceZ - sourceCenterZ);
         }
 
         private double targetZ(double sourceX, double sourceZ) {
-            return targetAnchorPos.getZ() + rotatedOffsetZ(sourceX - anchorPos.getX(), sourceZ - anchorPos.getZ());
+            double sourceCenterX = anchorPos.getX() + 0.5D;
+            double sourceCenterZ = anchorPos.getZ() + 0.5D;
+            return targetAnchorPos.getZ() + 0.5D
+                    + rotatedOffsetZ(sourceX - sourceCenterX, sourceZ - sourceCenterZ);
         }
 
         private Rotation rotation() {
