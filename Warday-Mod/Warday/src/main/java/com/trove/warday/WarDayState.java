@@ -31,6 +31,7 @@ public class WarDayState extends SavedData {
     private String attackerTeam = "";
     private boolean active;
     private long matchEndGameTime;
+    private long matchDurationTicks;
     private boolean fanfareActive;
     private long fanfareEndGameTime;
     private String winningTeam = "";
@@ -72,6 +73,7 @@ public class WarDayState extends SavedData {
         }
         state.active = tag.getBoolean("Active");
         state.matchEndGameTime = tag.getLong("MatchEndGameTime");
+        state.matchDurationTicks = tag.getLong("MatchDurationTicks");
         state.fanfareActive = state.active && tag.getBoolean("FanfareActive");
         state.fanfareEndGameTime = tag.getLong("FanfareEndGameTime");
         state.winningTeam = tag.getString("WinningTeam");
@@ -154,6 +156,7 @@ public class WarDayState extends SavedData {
         }
         tag.putBoolean("Active", active);
         tag.putLong("MatchEndGameTime", matchEndGameTime);
+        tag.putLong("MatchDurationTicks", matchDurationTicks);
         tag.putBoolean("FanfareActive", fanfareActive);
         tag.putLong("FanfareEndGameTime", fanfareEndGameTime);
         tag.putString("WinningTeam", winningTeam);
@@ -217,6 +220,7 @@ public class WarDayState extends SavedData {
             Set<UUID> defenderParticipants,
             Set<UUID> attackerParticipants,
             long matchEndGameTime,
+            long matchDurationTicks,
             boolean originalKeepInventory,
             double originalWorldBorderCenterX,
             double originalWorldBorderCenterZ,
@@ -224,6 +228,7 @@ public class WarDayState extends SavedData {
     ) {
         active = true;
         this.matchEndGameTime = matchEndGameTime;
+        this.matchDurationTicks = matchDurationTicks;
         fanfareActive = false;
         fanfareEndGameTime = 0L;
         winningTeam = "";
@@ -332,6 +337,7 @@ public class WarDayState extends SavedData {
     public void end() {
         active = false;
         matchEndGameTime = 0L;
+        matchDurationTicks = 0L;
         fanfareActive = false;
         fanfareEndGameTime = 0L;
         winningTeam = "";
@@ -396,6 +402,10 @@ public class WarDayState extends SavedData {
 
     public long matchEndGameTime() {
         return matchEndGameTime;
+    }
+
+    public long matchDurationTicks() {
+        return matchDurationTicks;
     }
 
     public long fanfareEndGameTime() {

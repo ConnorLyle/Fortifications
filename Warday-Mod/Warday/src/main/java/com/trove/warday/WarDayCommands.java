@@ -30,11 +30,13 @@ import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.Container;
+import net.minecraft.world.BossEvent;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
@@ -102,6 +104,9 @@ public class WarDayCommands {
     private static final Map<UUID, PendingRespawn> PENDING_RESPAWNS = new HashMap<>();
     private static final Map<UUID, Integer> DEATH_COUNTS = new HashMap<>();
     private static final Map<UUID, Deque<Long>> DIG_HISTORY = new HashMap<>();
+    private static ServerBossEvent matchTimerBossBar;
+    private static MinecraftServer matchTimerBossBarServer;
+    private static long lastBossBarSeconds = Long.MIN_VALUE;
 
     @SubscribeEvent
     public void registerCommands(RegisterCommandsEvent event) {
@@ -582,12 +587,14 @@ public class WarDayCommands {
         double originalWorldBorderCenterX = warDayLevel.getWorldBorder().getCenterX();
         double originalWorldBorderCenterZ = warDayLevel.getWorldBorder().getCenterZ();
         double originalWorldBorderSize = warDayLevel.getWorldBorder().getSize();
-        long matchEndGameTime = warDayLevel.getGameTime() + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt() * 20L;
+        long matchDurationTicks = WarDayConfig.MATCH_DURATION_SECONDS.getAsInt() * 20L;
+        long matchEndGameTime = warDayLevel.getGameTime() + matchDurationTicks;
         state.start(
                 snapshots,
                 defenderIds,
                 attackerIds,
                 matchEndGameTime,
+                matchDurationTicks,
                 originalKeepInventory,
                 originalWorldBorderCenterX,
                 originalWorldBorderCenterZ,
@@ -631,6 +638,7 @@ public class WarDayCommands {
                 spectators++;
             }
         }
+        syncMatchTimerBossBar(source.getServer(), warDayLevel, state, true);
         source.getServer().getPlayerList().broadcastSystemMessage(
                 message(ChatFormatting.GREEN, "War Day started for " + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt()
                         + " seconds. Defenders=" + defenders + ", attackers=" + attackers + ", spectators=" + spectators
@@ -729,6 +737,9 @@ public class WarDayCommands {
                 }
             }
             applyActiveMatchRole(player, state);
+            warDayLevel(player.getServer(), state).ifPresent(level ->
+                    syncMatchTimerBossBar(player.getServer(), level, state, true)
+            );
             return;
         }
 
@@ -744,17 +755,32 @@ public class WarDayCommands {
     }
 
     @SubscribeEvent
+    public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player && matchTimerBossBar != null) {
+            matchTimerBossBar.removePlayer(player);
+        }
+    }
+
+    @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
         WarDayState state = WarDayState.get(event.getServer());
         if (!state.isActive()) {
             PENDING_RESPAWNS.clear();
+            hideMatchTimerBossBar(event.getServer());
             return;
         }
 
         Optional<ServerLevel> warDayLevel = warDayLevel(event.getServer(), state);
         if (state.isFanfareActive()) {
+            hideMatchTimerBossBar(event.getServer());
             warDayLevel.ifPresent(level -> tickVictoryFanfare(event.getServer(), level, state));
             return;
+        }
+
+        if (warDayLevel.isPresent()) {
+            syncMatchTimerBossBar(event.getServer(), warDayLevel.get(), state, false);
+        } else {
+            hideMatchTimerBossBar(event.getServer());
         }
 
         if (warDayLevel.isPresent() && state.matchEndGameTime() > 0L && warDayLevel.get().getGameTime() >= state.matchEndGameTime()) {
@@ -999,6 +1025,7 @@ public class WarDayCommands {
             return false;
         }
 
+        hideMatchTimerBossBar(server);
         PENDING_RESPAWNS.clear();
         DEATH_COUNTS.clear();
         DIG_HISTORY.clear();
@@ -1097,7 +1124,84 @@ public class WarDayCommands {
         return Math.max(0L, (endGameTime - gameTime + 19L) / 20L);
     }
 
+    private static void syncMatchTimerBossBar(
+            MinecraftServer server,
+            ServerLevel level,
+            WarDayState state,
+            boolean force
+    ) {
+        if (!state.isCombatActive() || state.matchEndGameTime() <= 0L) {
+            hideMatchTimerBossBar(server);
+            return;
+        }
+
+        ServerBossEvent bossBar = matchTimerBossBar(server);
+        long remainingTicks = Math.max(0L, state.matchEndGameTime() - level.getGameTime());
+        long remainingSeconds = (remainingTicks + 19L) / 20L;
+        if (force || remainingSeconds != lastBossBarSeconds) {
+            long totalTicks = state.matchDurationTicks() > 0L
+                    ? state.matchDurationTicks()
+                    : WarDayConfig.MATCH_DURATION_SECONDS.getAsInt() * 20L;
+            float progress = Math.max(0.0F, Math.min(1.0F, (float) remainingTicks / Math.max(1L, totalTicks)));
+            long minutes = remainingSeconds / 60L;
+            long seconds = remainingSeconds % 60L;
+            bossBar.setName(message(ChatFormatting.GOLD,
+                    "War Day - " + minutes + ":" + (seconds < 10L ? "0" : "") + seconds));
+            bossBar.setProgress(progress);
+            syncMatchTimerPlayers(server, bossBar);
+            lastBossBarSeconds = remainingSeconds;
+        }
+        bossBar.setVisible(true);
+    }
+
+    private static ServerBossEvent matchTimerBossBar(MinecraftServer server) {
+        if (matchTimerBossBar == null || matchTimerBossBarServer != server) {
+            if (matchTimerBossBar != null) {
+                matchTimerBossBar.removeAllPlayers();
+            }
+            matchTimerBossBar = new ServerBossEvent(
+                    message(ChatFormatting.GOLD, "War Day"),
+                    BossEvent.BossBarColor.YELLOW,
+                    BossEvent.BossBarOverlay.PROGRESS
+            );
+            matchTimerBossBarServer = server;
+            lastBossBarSeconds = Long.MIN_VALUE;
+        }
+        return matchTimerBossBar;
+    }
+
+    private static void syncMatchTimerPlayers(MinecraftServer server, ServerBossEvent bossBar) {
+        Set<ServerPlayer> onlinePlayers = new HashSet<>(server.getPlayerList().getPlayers());
+        for (ServerPlayer player : List.copyOf(bossBar.getPlayers())) {
+            if (!onlinePlayers.contains(player)) {
+                bossBar.removePlayer(player);
+            }
+        }
+        for (ServerPlayer player : onlinePlayers) {
+            if (!bossBar.getPlayers().contains(player)) {
+                bossBar.addPlayer(player);
+            }
+        }
+    }
+
+    private static void hideMatchTimerBossBar(MinecraftServer server) {
+        if (matchTimerBossBar == null) {
+            return;
+        }
+        if (matchTimerBossBarServer != server) {
+            matchTimerBossBar.removeAllPlayers();
+            matchTimerBossBar = null;
+            matchTimerBossBarServer = null;
+            lastBossBarSeconds = Long.MIN_VALUE;
+            return;
+        }
+        matchTimerBossBar.setVisible(false);
+        matchTimerBossBar.removeAllPlayers();
+        lastBossBarSeconds = Long.MIN_VALUE;
+    }
+
     private static int endActiveWarDay(MinecraftServer server, WarDayState state) {
+        hideMatchTimerBossBar(server);
         int restored = 0;
         Map<UUID, WarDayState.PlayerSnapshot> snapshots = state.savedPlayers();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {

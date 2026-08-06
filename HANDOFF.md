@@ -71,6 +71,7 @@ Do not begin implementation until that assessment has been presented. If the use
 - Nexus destruction in the active War Day dimension starts the persisted victory-fanfare phase; restoration follows when the configured fanfare finishes, while `/warday end` remains an immediate operator override.
 - Respawn handling exists for active participants: players briefly enter spectator mode, are teleported above their spawn, then restored after `respawnDelaySeconds`.
 - Active-match lifecycle edge cases have been implemented, including login handling during an active match, deferred restoration after the match, persisted pending respawn/death state, and active-role reassignment.
+- A server-owned boss-bar timer displays the authoritative combat countdown to all online match players, reconstructs from persisted state after restart, synchronizes login/logout, and disappears before the victory fanfare or any match cleanup path.
 - `/warday validate` and `/warday scan` now narrow marker scanning to loaded claimed chunks owned by the configured teams within the validation radius instead of walking the entire full-height radius volume.
 - `/warday prepare confirm` now clears only positions mapped from the actual source claim cluster before paste. It no longer wipes unclaimed holes inside the cluster's rectangular bounding footprint.
 - The Fortifications mod registers a synced `fortifications:unarmed_damage` player attribute and has a global `FortificationsMod.GLOBAL_ACTIVE` flag.
@@ -80,10 +81,15 @@ Do not begin implementation until that assessment has been presented. If the use
 
 ## Active/Halted Work
 
-- Active queue item: `WARDAY_TODO.md` section **Player and entity state**, exact task **“Make non-player entities carry over into the War Day dimension and define which entity categories must be copied or transferred.”**
+- Current implementation item: `WARDAY_TODO.md` section **Match presentation and HUD**, exact task **“Add a boss-bar match timer at the top of the screen and keep it synchronized with the authoritative match clock.”**
+- The boss bar is implemented with `ServerBossEvent`. Its name and progress are derived once per second from the persisted `matchEndGameTime`; `matchDurationTicks` is now persisted for restart-stable progress normalization, with a configuration fallback for legacy saves.
+- Boss-bar player membership is synchronized at match start, login, logout, and periodic updates. The bar is removed at fanfare transition, `/warday end`, inactive-state recovery, missing-level recovery, and cross-server static cleanup.
+- Focused timer-boundary calculations passed. `gradle build --no-daemon --no-problems-report` succeeded on 2026-08-06. The build artifact and refreshed `MYTH MODS FOR DEREK/warday-1.0.0.jar` are both 111,385 bytes with SHA-256 `5FFBF88DC42834CF97CCB94D8F33962FF26EA383655A06D49272A27992399488`.
+- The boss-bar item remains unchecked pending visual and lifecycle verification in Minecraft.
+- First still-unverified canonical item: `WARDAY_TODO.md` section **Player and entity state**, exact task **“Make non-player entities carry over into the War Day dimension and define which entity categories must be copied or transferred.”**
 - Source review on 2026-08-06 found that continuous entity coordinates were rotated around the anchor block corner, which could shift entities into an adjacent transformed block. `PlacementPlan.targetX/targetZ` now rotate around the anchor block center.
 - Focused calculation verification checked 900 points across all four rotations and confirmed that every entity point remains inside the block produced by the integer block transform.
-- `gradle build --no-daemon --no-problems-report` succeeded on 2026-08-06. The build artifact and refreshed `MYTH MODS FOR DEREK/warday-1.0.0.jar` are both 109,685 bytes with SHA-256 `05277987197345962CA438506ED73E64AD9EEAD4E34CDE7DCBD14D75B4E183EA`.
+- The entity-position correction previously built successfully at SHA-256 `05277987197345962CA438506ED73E64AD9EEAD4E34CDE7DCBD14D75B4E183EA`; that artifact has now been superseded by the boss-bar build recorded above.
 - A preceding `gradle clean build --no-daemon` attempt compiled the source but encountered a transient Windows access denial in NeoForge's generated `build/tmp` output; a normal retry compiled and produced the JAR, then hit a OneDrive collision replacing Gradle's generated problems report. Disabling that optional report produced the clean successful build above.
 - The entity task and nested tamed-entity task remain unchecked because no Minecraft runtime test was performed. NBT fidelity, AI/tame behavior, leash recreation, passenger trees, entity caps, cleanup, and restart behavior remain manual-verification requirements.
 - The rotation implementation assumes the defender target facing is east because the defender anchor is `[0, warDayBaseY, 0]` and the attacker anchor is `[baseSpacingBlocks, warDayBaseY, 0]`.
@@ -99,11 +105,11 @@ Do not begin implementation until that assessment has been presented. If the use
 
 ## Next Immediate Steps
 
-1. Run the entity carryover manual matrix from the first `WARDAY_TODO.md` item: representative vanilla and modded entities, named/damaged/sitting and following tamed wolves, vehicle/passenger trees, fence and entity leashes, all four defender rotations, an unclaimed-hole entity, and the configured entity cap.
-2. Run prepare/start/end twice and test a server restart during an active match. Confirm originals remain unchanged, owner/tame/NBT state survives, and no temporary or stale duplicates remain.
-3. If the matrix passes, record the actual runtime results under both the main entity item and nested tamed-entity item, then strike them through. If anything fails, keep them unchecked and document/fix the exact failure.
-4. Continue broader manual testing for defender base rotation, painting placement/copying, inventory restoration, fanfare lifecycle, death/respawn, logout/reconnect, and server restart as required by their respective unchecked queue items.
-5. Add project-level automated tests or GameTests for rotation mapping, entity-template state transitions, rotated footprints, and claim-scoped destination clearing.
+1. Manually verify the boss bar during start/countdown, death/respawn, logout/reconnect, server restart, defender timeout, nexus victory, `/warday end`, fanfare transition, and a second match. Confirm there are no stale or duplicate bars.
+2. Run the entity carryover manual matrix from the first `WARDAY_TODO.md` item: representative vanilla and modded entities, named/damaged/sitting and following tamed wolves, vehicle/passenger trees, fence and entity leashes, all four defender rotations, an unclaimed-hole entity, and the configured entity cap.
+3. Run prepare/start/end twice and test a server restart during an active match. Confirm originals remain unchanged, owner/tame/NBT state survives, and no temporary or stale duplicates remain.
+4. Record successful runtime results beneath each applicable queue item before striking it through; keep any item with a failure or untested edge case unchecked.
+5. Continue broader manual testing for defender base rotation, painting placement/copying, inventory restoration, fanfare lifecycle, death/respawn, logout/reconnect, and server restart, and add project-level automated tests or GameTests for state transitions and transformations.
 
 # 2. Architectural Decisions & Patterns
 
