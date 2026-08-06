@@ -72,6 +72,7 @@ Do not begin implementation until that assessment has been presented. If the use
 - Respawn handling exists for active participants: players briefly enter spectator mode, are teleported above their spawn, then restored after `respawnDelaySeconds`.
 - Active-match lifecycle edge cases have been implemented, including login handling during an active match, deferred restoration after the match, persisted pending respawn/death state, and active-role reassignment.
 - A server-owned boss-bar timer displays the authoritative combat countdown to all online match players, reconstructs from persisted state after restart, synchronizes login/logout, and disappears before the victory fanfare or any match cleanup path.
+- A server-owned `warday_roster` sidebar lists both persisted participant teams, paginates large rosters every five seconds, reconstructs after restart, and restores the pre-match sidebar objective during cleanup.
 - `/warday validate` and `/warday scan` now narrow marker scanning to loaded claimed chunks owned by the configured teams within the validation radius instead of walking the entire full-height radius volume.
 - `/warday prepare confirm` now clears only positions mapped from the actual source claim cluster before paste. It no longer wipes unclaimed holes inside the cluster's rectangular bounding footprint.
 - The Fortifications mod registers a synced `fortifications:unarmed_damage` player attribute and has a global `FortificationsMod.GLOBAL_ACTIVE` flag.
@@ -81,10 +82,15 @@ Do not begin implementation until that assessment has been presented. If the use
 
 ## Active/Halted Work
 
-- Current implementation item: `WARDAY_TODO.md` section **Match presentation and HUD**, exact task **“Add a boss-bar match timer at the top of the screen and keep it synchronized with the authoritative match clock.”**
+- Current implementation item: `WARDAY_TODO.md` section **Match presentation and HUD**, exact task **“Add a sidebar scoreboard that lists Team 1 and Team 2 and their participating players.”**
+- The sidebar uses custom score display components and blank number formatting rather than altering real player scoreboard teams. It renders both team headers plus up to six alphabetically sorted names per team and rotates five-second pages when needed.
+- Persisted `previousSidebarObjective` state allows cleanup to restore the objective that owned the sidebar before War Day. If an external system replaces the sidebar mid-match, Warday records that newer objective before reclaiming the slot and restores it during cleanup if Warday still owns the slot.
+- Pagination calculations passed for every 0-30 player combination on both teams with full coverage and no page above 14 lines. `gradle build --no-daemon --no-problems-report` succeeded on 2026-08-06. The build artifact and refreshed `MYTH MODS FOR DEREK/warday-1.0.0.jar` are both 116,294 bytes with SHA-256 `C5AEEBC0A78E339416520390263C884BE80AE9BE3EADA53751B94392DC59CD9A`.
+- The sidebar item remains unchecked pending visual and lifecycle verification in Minecraft.
+- Previous implementation item: `WARDAY_TODO.md` section **Match presentation and HUD**, exact task **“Add a boss-bar match timer at the top of the screen and keep it synchronized with the authoritative match clock.”**
 - The boss bar is implemented with `ServerBossEvent`. Its name and progress are derived once per second from the persisted `matchEndGameTime`; `matchDurationTicks` is now persisted for restart-stable progress normalization, with a configuration fallback for legacy saves.
 - Boss-bar player membership is synchronized at match start, login, logout, and periodic updates. The bar is removed at fanfare transition, `/warday end`, inactive-state recovery, missing-level recovery, and cross-server static cleanup.
-- Focused timer-boundary calculations passed. `gradle build --no-daemon --no-problems-report` succeeded on 2026-08-06. The build artifact and refreshed `MYTH MODS FOR DEREK/warday-1.0.0.jar` are both 111,385 bytes with SHA-256 `5FFBF88DC42834CF97CCB94D8F33962FF26EA383655A06D49272A27992399488`.
+- Focused timer-boundary calculations passed. Its earlier build artifact at SHA-256 `5FFBF88DC42834CF97CCB94D8F33962FF26EA383655A06D49272A27992399488` has been superseded by the sidebar build recorded above.
 - The boss-bar item remains unchecked pending visual and lifecycle verification in Minecraft.
 - First still-unverified canonical item: `WARDAY_TODO.md` section **Player and entity state**, exact task **“Make non-player entities carry over into the War Day dimension and define which entity categories must be copied or transferred.”**
 - Source review on 2026-08-06 found that continuous entity coordinates were rotated around the anchor block corner, which could shift entities into an adjacent transformed block. `PlacementPlan.targetX/targetZ` now rotate around the anchor block center.
@@ -105,11 +111,11 @@ Do not begin implementation until that assessment has been presented. If the use
 
 ## Next Immediate Steps
 
-1. Manually verify the boss bar during start/countdown, death/respawn, logout/reconnect, server restart, defender timeout, nexus victory, `/warday end`, fanfare transition, and a second match. Confirm there are no stale or duplicate bars.
-2. Run the entity carryover manual matrix from the first `WARDAY_TODO.md` item: representative vanilla and modded entities, named/damaged/sitting and following tamed wolves, vehicle/passenger trees, fence and entity leashes, all four defender rotations, an unclaimed-hole entity, and the configured entity cap.
-3. Run prepare/start/end twice and test a server restart during an active match. Confirm originals remain unchanged, owner/tame/NBT state survives, and no temporary or stale duplicates remain.
+1. Manually verify the sidebar layout, team membership, page rotation, offline-name fallback, restart reconstruction, cleanup, and restoration of a pre-existing sidebar objective.
+2. Manually verify the boss bar during start/countdown, death/respawn, logout/reconnect, server restart, defender timeout, nexus victory, `/warday end`, fanfare transition, and a second match. Confirm there are no stale or duplicate HUD elements.
+3. Run the entity carryover manual matrix from the first `WARDAY_TODO.md` item, including tamed wolves, passenger trees, leashes, all rotations, an unclaimed-hole entity, the configured cap, repeated matches, and restart cleanup.
 4. Record successful runtime results beneath each applicable queue item before striking it through; keep any item with a failure or untested edge case unchecked.
-5. Continue broader manual testing for defender base rotation, painting placement/copying, inventory restoration, fanfare lifecycle, death/respawn, logout/reconnect, and server restart, and add project-level automated tests or GameTests for state transitions and transformations.
+5. If the sidebar is readable in-game, implement the separate live-health queue item by extending the existing roster-line renderer, then continue the remaining manual and automated lifecycle coverage.
 
 # 2. Architectural Decisions & Patterns
 
@@ -159,6 +165,8 @@ Do not begin implementation until that assessment has been presented. If the use
   - `CopiedNexusPos` long, optional
   - `AttackerSpawnPos` long, optional
   - `Active` boolean
+  - `MatchEndGameTime` and `MatchDurationTicks` longs
+  - `PreviousSidebarObjective` string
   - `SavedPlayers` list of player snapshot compounds
 - `WarDayState.load` also reads legacy `SavedGameModes` entries and converts them into partial `PlayerSnapshot` entries. This looks like backward compatibility for an older saved state shape.
 - Fortifications adds the synced attribute `fortifications:unarmed_damage` to players through `EntityAttributeModificationEvent`.

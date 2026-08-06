@@ -24,12 +24,14 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.numbers.BlankFormat;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.ServerScoreboard;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -61,6 +63,12 @@ import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.scores.DisplaySlot;
+import net.minecraft.world.scores.Objective;
+import net.minecraft.world.scores.PlayerScoreEntry;
+import net.minecraft.world.scores.ScoreAccess;
+import net.minecraft.world.scores.ScoreHolder;
+import net.minecraft.world.scores.criteria.ObjectiveCriteria;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -77,6 +85,7 @@ import net.neoforged.neoforge.items.IItemHandlerModifiable;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.HashMap;
@@ -100,6 +109,9 @@ public class WarDayCommands {
     private static final String MATCH_ENTITY_MARKER = "warday_match_entity";
     private static final String MATCH_ENTITY_BATCH = "warday_match_entity_batch";
     private static final String PREPARED_DECORATIVE_MARKER = "warday_prepared_decorative";
+    private static final String WARDAY_ROSTER_OBJECTIVE = "warday_roster";
+    private static final int ROSTER_PLAYERS_PER_TEAM_PAGE = 6;
+    private static final long ROSTER_PAGE_TICKS = 100L;
     private static final SuggestionProvider<CommandSourceStack> TEAM_NAME_SUGGESTIONS = WarDayCommands::suggestTeamNames;
     private static final Map<UUID, PendingRespawn> PENDING_RESPAWNS = new HashMap<>();
     private static final Map<UUID, Integer> DEATH_COUNTS = new HashMap<>();
@@ -107,6 +119,8 @@ public class WarDayCommands {
     private static ServerBossEvent matchTimerBossBar;
     private static MinecraftServer matchTimerBossBarServer;
     private static long lastBossBarSeconds = Long.MIN_VALUE;
+    private static MinecraftServer rosterScoreboardServer;
+    private static String lastRosterSignature = "";
 
     @SubscribeEvent
     public void registerCommands(RegisterCommandsEvent event) {
@@ -589,12 +603,14 @@ public class WarDayCommands {
         double originalWorldBorderSize = warDayLevel.getWorldBorder().getSize();
         long matchDurationTicks = WarDayConfig.MATCH_DURATION_SECONDS.getAsInt() * 20L;
         long matchEndGameTime = warDayLevel.getGameTime() + matchDurationTicks;
+        String previousSidebarObjective = currentSidebarObjectiveName(source.getServer());
         state.start(
                 snapshots,
                 defenderIds,
                 attackerIds,
                 matchEndGameTime,
                 matchDurationTicks,
+                previousSidebarObjective,
                 originalKeepInventory,
                 originalWorldBorderCenterX,
                 originalWorldBorderCenterZ,
@@ -639,6 +655,7 @@ public class WarDayCommands {
             }
         }
         syncMatchTimerBossBar(source.getServer(), warDayLevel, state, true);
+        syncWarDaySidebar(source.getServer(), state, warDayLevel.getGameTime(), true);
         source.getServer().getPlayerList().broadcastSystemMessage(
                 message(ChatFormatting.GREEN, "War Day started for " + WarDayConfig.MATCH_DURATION_SECONDS.getAsInt()
                         + " seconds. Defenders=" + defenders + ", attackers=" + attackers + ", spectators=" + spectators
@@ -740,6 +757,10 @@ public class WarDayCommands {
             warDayLevel(player.getServer(), state).ifPresent(level ->
                     syncMatchTimerBossBar(player.getServer(), level, state, true)
             );
+            long rosterGameTime = warDayLevel(player.getServer(), state)
+                    .map(ServerLevel::getGameTime)
+                    .orElse(player.getServer().overworld().getGameTime());
+            syncWarDaySidebar(player.getServer(), state, rosterGameTime, true);
             return;
         }
 
@@ -771,6 +792,12 @@ public class WarDayCommands {
         }
 
         Optional<ServerLevel> warDayLevel = warDayLevel(event.getServer(), state);
+        long rosterGameTime = warDayLevel
+                .map(ServerLevel::getGameTime)
+                .orElse(event.getServer().overworld().getGameTime());
+        if (rosterScoreboardServer != event.getServer() || rosterGameTime % 20L == 0L) {
+            syncWarDaySidebar(event.getServer(), state, rosterGameTime, false);
+        }
         if (state.isFanfareActive()) {
             hideMatchTimerBossBar(event.getServer());
             warDayLevel.ifPresent(level -> tickVictoryFanfare(event.getServer(), level, state));
@@ -1200,6 +1227,150 @@ public class WarDayCommands {
         lastBossBarSeconds = Long.MIN_VALUE;
     }
 
+    private static String currentSidebarObjectiveName(MinecraftServer server) {
+        Objective current = server.getScoreboard().getDisplayObjective(DisplaySlot.SIDEBAR);
+        if (current == null || WARDAY_ROSTER_OBJECTIVE.equals(current.getName())) {
+            return "";
+        }
+        return current.getName();
+    }
+
+    private static void syncWarDaySidebar(
+            MinecraftServer server,
+            WarDayState state,
+            long gameTime,
+            boolean force
+    ) {
+        if (!state.isActive()) {
+            return;
+        }
+
+        List<RosterPlayer> defenders = rosterPlayers(server, state.defenderParticipants());
+        List<RosterPlayer> attackers = rosterPlayers(server, state.attackerParticipants());
+        int pageCount = Math.max(1, Math.max(
+                pagesForRoster(defenders.size()),
+                pagesForRoster(attackers.size())
+        ));
+        int page = Math.floorMod(gameTime / ROSTER_PAGE_TICKS, pageCount);
+        String signature = rosterSignature(state, defenders, attackers, page, pageCount);
+
+        ServerScoreboard scoreboard = server.getScoreboard();
+        Objective objective = scoreboard.getObjective(WARDAY_ROSTER_OBJECTIVE);
+        Objective displayed = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
+        if (displayed != null && !WARDAY_ROSTER_OBJECTIVE.equals(displayed.getName())) {
+            state.setPreviousSidebarObjective(displayed.getName());
+        }
+        boolean wrongServer = rosterScoreboardServer != server;
+        boolean notDisplayed = displayed != objective;
+        if (!force && !wrongServer && !notDisplayed && signature.equals(lastRosterSignature)) {
+            return;
+        }
+
+        if (objective == null) {
+            objective = scoreboard.addObjective(
+                    WARDAY_ROSTER_OBJECTIVE,
+                    ObjectiveCriteria.DUMMY,
+                    message(ChatFormatting.GOLD, "War Day Teams"),
+                    ObjectiveCriteria.RenderType.INTEGER,
+                    false,
+                    BlankFormat.INSTANCE
+            );
+        }
+        objective.setDisplayName(message(ChatFormatting.GOLD,
+                pageCount > 1 ? "War Day Teams " + (page + 1) + "/" + pageCount : "War Day Teams"));
+        clearRosterScores(scoreboard, objective);
+
+        List<net.minecraft.network.chat.Component> lines = new ArrayList<>();
+        addRosterTeamLines(lines, state.defenderTeam(), defenders, page, ChatFormatting.AQUA);
+        addRosterTeamLines(lines, state.attackerTeam(), attackers, page, ChatFormatting.RED);
+        for (int index = 0; index < lines.size(); index++) {
+            ScoreAccess score = scoreboard.getOrCreatePlayerScore(
+                    ScoreHolder.forNameOnly("wd_line_" + index),
+                    objective
+            );
+            score.display(lines.get(index));
+            score.numberFormatOverride(BlankFormat.INSTANCE);
+            score.set(15 - index);
+        }
+
+        scoreboard.setDisplayObjective(DisplaySlot.SIDEBAR, objective);
+        rosterScoreboardServer = server;
+        lastRosterSignature = signature;
+    }
+
+    private static List<RosterPlayer> rosterPlayers(MinecraftServer server, Set<UUID> playerIds) {
+        List<RosterPlayer> players = new ArrayList<>();
+        for (UUID playerId : playerIds) {
+            ServerPlayer online = server.getPlayerList().getPlayer(playerId);
+            String name = online != null
+                    ? online.getGameProfile().getName()
+                    : server.getProfileCache().get(playerId)
+                            .map(profile -> profile.getName())
+                            .orElse(playerId.toString().substring(0, 8));
+            players.add(new RosterPlayer(playerId, name));
+        }
+        players.sort(Comparator.comparing(RosterPlayer::name, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(player -> player.id().toString()));
+        return List.copyOf(players);
+    }
+
+    private static int pagesForRoster(int playerCount) {
+        return Math.max(1, (playerCount + ROSTER_PLAYERS_PER_TEAM_PAGE - 1) / ROSTER_PLAYERS_PER_TEAM_PAGE);
+    }
+
+    private static String rosterSignature(
+            WarDayState state,
+            List<RosterPlayer> defenders,
+            List<RosterPlayer> attackers,
+            int page,
+            int pageCount
+    ) {
+        return state.defenderTeam() + "|" + defenders + "|"
+                + state.attackerTeam() + "|" + attackers + "|" + page + "/" + pageCount;
+    }
+
+    private static void addRosterTeamLines(
+            List<net.minecraft.network.chat.Component> lines,
+            String teamName,
+            List<RosterPlayer> players,
+            int page,
+            ChatFormatting color
+    ) {
+        String displayTeamName = teamName == null || teamName.isBlank() ? "Unconfigured team" : teamName;
+        lines.add(message(color, displayTeamName).withStyle(ChatFormatting.BOLD));
+        int fromIndex = page * ROSTER_PLAYERS_PER_TEAM_PAGE;
+        int toIndex = Math.min(players.size(), fromIndex + ROSTER_PLAYERS_PER_TEAM_PAGE);
+        if (fromIndex >= players.size()) {
+            lines.add(message(ChatFormatting.DARK_GRAY, "  (no players this page)"));
+            return;
+        }
+        for (RosterPlayer player : players.subList(fromIndex, toIndex)) {
+            lines.add(message(color, "  " + player.name()));
+        }
+    }
+
+    private static void clearRosterScores(ServerScoreboard scoreboard, Objective objective) {
+        for (PlayerScoreEntry entry : List.copyOf(scoreboard.listPlayerScores(objective))) {
+            scoreboard.resetSinglePlayerScore(ScoreHolder.forNameOnly(entry.owner()), objective);
+        }
+    }
+
+    private static void restoreWarDaySidebar(MinecraftServer server, WarDayState state) {
+        ServerScoreboard scoreboard = server.getScoreboard();
+        Objective wardayObjective = scoreboard.getObjective(WARDAY_ROSTER_OBJECTIVE);
+        Objective current = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
+        if (current == wardayObjective) {
+            String previousName = state.previousSidebarObjective();
+            Objective previous = previousName.isBlank() ? null : scoreboard.getObjective(previousName);
+            scoreboard.setDisplayObjective(DisplaySlot.SIDEBAR, previous);
+        }
+        if (wardayObjective != null) {
+            scoreboard.removeObjective(wardayObjective);
+        }
+        rosterScoreboardServer = null;
+        lastRosterSignature = "";
+    }
+
     private static int endActiveWarDay(MinecraftServer server, WarDayState state) {
         hideMatchTimerBossBar(server);
         int restored = 0;
@@ -1229,6 +1400,7 @@ public class WarDayCommands {
             restoreWorldBorder(level, state);
             removeNexusMarker(level, state);
         });
+        restoreWarDaySidebar(server, state);
         state.end();
         PENDING_RESPAWNS.clear();
         DEATH_COUNTS.clear();
@@ -3137,6 +3309,9 @@ public class WarDayCommands {
     }
 
     private record EntityTemplateSpawn(int spawnedCount, int failedCount) {
+    }
+
+    private record RosterPlayer(UUID id, String name) {
     }
 
     private record ParticipantRespawn(ServerLevel level, BlockPos spawnPos, Item matchBlock) {
