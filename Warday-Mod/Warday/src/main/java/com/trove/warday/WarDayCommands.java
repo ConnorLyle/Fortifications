@@ -25,6 +25,8 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.numbers.BlankFormat;
+import net.minecraft.network.chat.numbers.FixedFormat;
+import net.minecraft.network.chat.numbers.NumberFormat;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
@@ -719,12 +721,12 @@ public class WarDayCommands {
             return;
         }
 
-        PENDING_RESPAWNS.put(player.getUUID(), new PendingRespawn(delayTicks, participant));
+        PendingRespawn pending = new PendingRespawn(delayTicks, participant, null);
         state.setPendingRespawnTicks(player.getUUID(), delayTicks);
-        player.setGameMode(GameType.SPECTATOR);
-        teleportPlayer(player, participant.level(), participant.spawnPos().offset(0, 11, 0));
+        pending = beginRespawnSpectating(player, state, pending, true);
+        PENDING_RESPAWNS.put(player.getUUID(), pending);
         player.sendSystemMessage(message(ChatFormatting.YELLOW,
-                "Respawning in " + delaySeconds + " seconds."));
+                "Respawning in " + delaySeconds + " seconds. Left click views the previous living teammate; right click views the next."));
     }
 
     @SubscribeEvent
@@ -834,9 +836,10 @@ public class WarDayCommands {
             }
 
             Optional<ParticipantRespawn> respawn = participantRespawn(player);
-            respawn.ifPresent(participant ->
-                    PENDING_RESPAWNS.put(entry.getKey(), new PendingRespawn(entry.getValue(), participant))
-            );
+            respawn.ifPresent(participant -> {
+                PendingRespawn pending = new PendingRespawn(entry.getValue(), participant, null);
+                PENDING_RESPAWNS.put(entry.getKey(), beginRespawnSpectating(player, state, pending, false));
+            });
         }
 
         if (PENDING_RESPAWNS.isEmpty()) {
@@ -854,9 +857,9 @@ public class WarDayCommands {
 
             PendingRespawn pending = entry.getValue().tick();
             if (pending.ticksRemaining() > 0) {
-                entry.setValue(pending);
                 state.setPendingRespawnTicks(player.getUUID(), pending.ticksRemaining());
-                teleportPlayer(player, pending.participant().level(), pending.participant().spawnPos().offset(0, 11, 0));
+                pending = maintainRespawnSpectating(player, state, pending, false);
+                entry.setValue(pending);
                 continue;
             }
 
@@ -1110,6 +1113,7 @@ public class WarDayCommands {
     }
 
     private static void applyFanfareRole(ServerPlayer player, WarDayState state) {
+        stopRespawnSpectating(player);
         player.setGameMode(GameType.SPECTATOR);
         warDayLevel(player.getServer(), state).ifPresent(level -> {
             if (player.level() != level) {
@@ -1245,8 +1249,8 @@ public class WarDayCommands {
             return;
         }
 
-        List<RosterPlayer> defenders = rosterPlayers(server, state.defenderParticipants());
-        List<RosterPlayer> attackers = rosterPlayers(server, state.attackerParticipants());
+        List<RosterPlayer> defenders = rosterPlayers(server, state, state.defenderParticipants());
+        List<RosterPlayer> attackers = rosterPlayers(server, state, state.attackerParticipants());
         int pageCount = Math.max(1, Math.max(
                 pagesForRoster(defenders.size()),
                 pagesForRoster(attackers.size())
@@ -1262,7 +1266,8 @@ public class WarDayCommands {
         }
         boolean wrongServer = rosterScoreboardServer != server;
         boolean notDisplayed = displayed != objective;
-        if (!force && !wrongServer && !notDisplayed && signature.equals(lastRosterSignature)) {
+        boolean objectiveMissing = objective == null;
+        if (!force && !wrongServer && !notDisplayed && !objectiveMissing && signature.equals(lastRosterSignature)) {
             return;
         }
 
@@ -1278,18 +1283,19 @@ public class WarDayCommands {
         }
         objective.setDisplayName(message(ChatFormatting.GOLD,
                 pageCount > 1 ? "War Day Teams " + (page + 1) + "/" + pageCount : "War Day Teams"));
-        clearRosterScores(scoreboard, objective);
 
-        List<net.minecraft.network.chat.Component> lines = new ArrayList<>();
+        List<RosterLine> lines = new ArrayList<>();
         addRosterTeamLines(lines, state.defenderTeam(), defenders, page, ChatFormatting.AQUA);
         addRosterTeamLines(lines, state.attackerTeam(), attackers, page, ChatFormatting.RED);
+        removeUnexpectedRosterScores(scoreboard, objective, lines.size());
         for (int index = 0; index < lines.size(); index++) {
+            RosterLine line = lines.get(index);
             ScoreAccess score = scoreboard.getOrCreatePlayerScore(
                     ScoreHolder.forNameOnly("wd_line_" + index),
                     objective
             );
-            score.display(lines.get(index));
-            score.numberFormatOverride(BlankFormat.INSTANCE);
+            score.display(line.display());
+            score.numberFormatOverride(line.numberFormat());
             score.set(15 - index);
         }
 
@@ -1298,7 +1304,11 @@ public class WarDayCommands {
         lastRosterSignature = signature;
     }
 
-    private static List<RosterPlayer> rosterPlayers(MinecraftServer server, Set<UUID> playerIds) {
+    private static List<RosterPlayer> rosterPlayers(
+            MinecraftServer server,
+            WarDayState state,
+            Set<UUID> playerIds
+    ) {
         List<RosterPlayer> players = new ArrayList<>();
         for (UUID playerId : playerIds) {
             ServerPlayer online = server.getPlayerList().getPlayer(playerId);
@@ -1307,7 +1317,16 @@ public class WarDayCommands {
                     : server.getProfileCache().get(playerId)
                             .map(profile -> profile.getName())
                             .orElse(playerId.toString().substring(0, 8));
-            players.add(new RosterPlayer(playerId, name));
+            WarDayRosterHealth.Snapshot health;
+            Optional<Integer> pendingRespawnTicks = state.pendingRespawnTicks(playerId);
+            if (online == null) {
+                health = WarDayRosterHealth.offline();
+            } else if (pendingRespawnTicks.isPresent() && pendingRespawnTicks.get() > 0) {
+                health = WarDayRosterHealth.respawning(pendingRespawnTicks.get());
+            } else {
+                health = WarDayRosterHealth.online(online.getHealth(), online.getMaxHealth());
+            }
+            players.add(new RosterPlayer(playerId, name, health));
         }
         players.sort(Comparator.comparing(RosterPlayer::name, String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(player -> player.id().toString()));
@@ -1330,28 +1349,64 @@ public class WarDayCommands {
     }
 
     private static void addRosterTeamLines(
-            List<net.minecraft.network.chat.Component> lines,
+            List<RosterLine> lines,
             String teamName,
             List<RosterPlayer> players,
             int page,
             ChatFormatting color
     ) {
         String displayTeamName = teamName == null || teamName.isBlank() ? "Unconfigured team" : teamName;
-        lines.add(message(color, displayTeamName).withStyle(ChatFormatting.BOLD));
+        lines.add(new RosterLine(
+                message(color, displayTeamName).withStyle(ChatFormatting.BOLD),
+                BlankFormat.INSTANCE
+        ));
         int fromIndex = page * ROSTER_PLAYERS_PER_TEAM_PAGE;
         int toIndex = Math.min(players.size(), fromIndex + ROSTER_PLAYERS_PER_TEAM_PAGE);
         if (fromIndex >= players.size()) {
-            lines.add(message(ChatFormatting.DARK_GRAY, "  (no players this page)"));
+            lines.add(new RosterLine(
+                    message(ChatFormatting.DARK_GRAY, "  (no players this page)"),
+                    BlankFormat.INSTANCE
+            ));
             return;
         }
         for (RosterPlayer player : players.subList(fromIndex, toIndex)) {
-            lines.add(message(color, "  " + player.name()));
+            lines.add(new RosterLine(
+                    message(color, "  " + player.name()),
+                    new FixedFormat(message(rosterHealthColor(player.health()), WarDayRosterHealth.displayText(player.health())))
+            ));
         }
     }
 
-    private static void clearRosterScores(ServerScoreboard scoreboard, Objective objective) {
+    private static ChatFormatting rosterHealthColor(WarDayRosterHealth.Snapshot health) {
+        return switch (WarDayRosterHealth.band(health)) {
+            case HEALTHY -> ChatFormatting.GREEN;
+            case HURT -> ChatFormatting.YELLOW;
+            case LOW -> ChatFormatting.GOLD;
+            case CRITICAL, EMPTY -> ChatFormatting.RED;
+            case RESPAWNING -> ChatFormatting.YELLOW;
+            case OFFLINE -> ChatFormatting.DARK_GRAY;
+        };
+    }
+
+    private static void removeUnexpectedRosterScores(
+            ServerScoreboard scoreboard,
+            Objective objective,
+            int expectedLineCount
+    ) {
         for (PlayerScoreEntry entry : List.copyOf(scoreboard.listPlayerScores(objective))) {
-            scoreboard.resetSinglePlayerScore(ScoreHolder.forNameOnly(entry.owner()), objective);
+            String owner = entry.owner();
+            if (!owner.startsWith("wd_line_")) {
+                scoreboard.resetSinglePlayerScore(ScoreHolder.forNameOnly(owner), objective);
+                continue;
+            }
+            try {
+                int index = Integer.parseInt(owner.substring("wd_line_".length()));
+                if (index < 0 || index >= expectedLineCount) {
+                    scoreboard.resetSinglePlayerScore(ScoreHolder.forNameOnly(owner), objective);
+                }
+            } catch (NumberFormatException ignored) {
+                scoreboard.resetSinglePlayerScore(ScoreHolder.forNameOnly(owner), objective);
+            }
         }
     }
 
@@ -1378,6 +1433,7 @@ public class WarDayCommands {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             WarDayState.PlayerSnapshot snapshot = snapshots.get(player.getUUID());
             if (snapshot != null) {
+                stopRespawnSpectating(player);
                 if (restorePlayer(server, player, snapshot)) {
                     state.removeSavedPlayer(player.getUUID());
                     restored++;
@@ -1498,11 +1554,11 @@ public class WarDayCommands {
             ParticipantRespawn respawn = participant.get();
             Optional<Integer> pendingTicks = state.pendingRespawnTicks(player.getUUID());
             if (pendingTicks.isPresent() && pendingTicks.get() > 0) {
-                PENDING_RESPAWNS.put(player.getUUID(), new PendingRespawn(pendingTicks.get(), respawn));
-                player.setGameMode(GameType.SPECTATOR);
-                teleportPlayer(player, respawn.level(), respawn.spawnPos().offset(0, 11, 0));
+                PendingRespawn pending = new PendingRespawn(pendingTicks.get(), respawn, null);
+                PENDING_RESPAWNS.put(player.getUUID(), beginRespawnSpectating(player, state, pending, true));
                 player.sendSystemMessage(message(ChatFormatting.YELLOW,
-                        "War Day is active. Respawning in " + Math.max(1, pendingTicks.get() / 20) + " seconds."));
+                        "War Day is active. Respawning in " + Math.max(1, (pendingTicks.get() + 19) / 20)
+                                + " seconds. Left/right click cycles living teammates."));
                 return;
             }
 
@@ -1999,7 +2055,146 @@ public class WarDayCommands {
         return Optional.empty();
     }
 
+    static void cycleRespawnSpectator(ServerPlayer player, int direction) {
+        if (direction != -1 && direction != 1) {
+            return;
+        }
+
+        WarDayState state = WarDayState.get(player.getServer());
+        PendingRespawn pending = PENDING_RESPAWNS.get(player.getUUID());
+        if (!state.isCombatActive()
+                || pending == null
+                || state.pendingRespawnTicks(player.getUUID()).orElse(0) <= 0
+                || !player.isSpectator()) {
+            return;
+        }
+
+        PENDING_RESPAWNS.put(
+                player.getUUID(),
+                selectRespawnSpectatorTarget(player, state, pending, direction, true)
+        );
+    }
+
+    private static PendingRespawn beginRespawnSpectating(
+            ServerPlayer player,
+            WarDayState state,
+            PendingRespawn pending,
+            boolean announce
+    ) {
+        player.setGameMode(GameType.SPECTATOR);
+        player.setCamera(player);
+        WarDayNetwork.syncRespawnSpectatorState(player, true);
+        return maintainRespawnSpectating(player, state, pending, announce);
+    }
+
+    private static PendingRespawn maintainRespawnSpectating(
+            ServerPlayer player,
+            WarDayState state,
+            PendingRespawn pending,
+            boolean announce
+    ) {
+        List<ServerPlayer> candidates = livingTeammatesForRespawnSpectator(player, state);
+        UUID currentTargetId = pending.spectatorTargetId();
+        ServerPlayer currentTarget = currentTargetId == null
+                ? null
+                : candidates.stream()
+                        .filter(candidate -> candidate.getUUID().equals(currentTargetId))
+                        .findFirst()
+                        .orElse(null);
+        if (currentTarget != null) {
+            if (player.getCamera() != currentTarget) {
+                player.setCamera(currentTarget);
+            }
+            return pending;
+        }
+
+        return selectRespawnSpectatorTarget(player, state, pending, 1, announce || currentTargetId != null);
+    }
+
+    private static PendingRespawn selectRespawnSpectatorTarget(
+            ServerPlayer player,
+            WarDayState state,
+            PendingRespawn pending,
+            int direction,
+            boolean announce
+    ) {
+        List<ServerPlayer> candidates = livingTeammatesForRespawnSpectator(player, state);
+        List<UUID> candidateIds = candidates.stream().map(ServerPlayer::getUUID).toList();
+        Optional<UUID> selectedId = WarDaySpectatorCycle.select(
+                candidateIds,
+                pending.spectatorTargetId(),
+                direction
+        );
+        if (selectedId.isEmpty()) {
+            boolean targetChanged = pending.spectatorTargetId() != null || player.getCamera() != player;
+            player.setCamera(player);
+            teleportPlayer(player, pending.participant().level(), pending.participant().spawnPos().offset(0, 11, 0));
+            if (announce || targetChanged) {
+                player.displayClientMessage(message(ChatFormatting.YELLOW,
+                        "No living teammates are available to spectate."), true);
+            }
+            return pending.withSpectatorTarget(null);
+        }
+
+        ServerPlayer selected = candidates.stream()
+                .filter(candidate -> candidate.getUUID().equals(selectedId.get()))
+                .findFirst()
+                .orElseThrow();
+        player.setCamera(selected);
+        if (announce || !selected.getUUID().equals(pending.spectatorTargetId())) {
+            player.displayClientMessage(message(ChatFormatting.AQUA,
+                    "Spectating " + selected.getGameProfile().getName() + " - left/right click to cycle."), true);
+        }
+        return pending.withSpectatorTarget(selected.getUUID());
+    }
+
+    private static List<ServerPlayer> livingTeammatesForRespawnSpectator(
+            ServerPlayer viewer,
+            WarDayState state
+    ) {
+        Set<UUID> teamMembers;
+        if (state.isDefenderParticipant(viewer.getUUID())) {
+            teamMembers = state.defenderParticipants();
+        } else if (state.isAttackerParticipant(viewer.getUUID())) {
+            teamMembers = state.attackerParticipants();
+        } else {
+            return List.of();
+        }
+
+        Optional<ServerLevel> level = warDayLevel(viewer.getServer(), state);
+        if (level.isEmpty()) {
+            return List.of();
+        }
+
+        List<ServerPlayer> candidates = new ArrayList<>();
+        for (UUID memberId : teamMembers) {
+            if (memberId.equals(viewer.getUUID()) || state.pendingRespawnTicks(memberId).orElse(0) > 0) {
+                continue;
+            }
+            ServerPlayer candidate = viewer.getServer().getPlayerList().getPlayer(memberId);
+            if (candidate == null
+                    || candidate.level() != level.get()
+                    || candidate.isSpectator()
+                    || !candidate.isAlive()
+                    || candidate.isDeadOrDying()
+                    || candidate.getHealth() <= 0.0F) {
+                continue;
+            }
+            candidates.add(candidate);
+        }
+        candidates.sort(Comparator
+                .comparing((ServerPlayer candidate) -> candidate.getGameProfile().getName(), String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(candidate -> candidate.getUUID().toString()));
+        return List.copyOf(candidates);
+    }
+
+    private static void stopRespawnSpectating(ServerPlayer player) {
+        player.setCamera(player);
+        WarDayNetwork.syncRespawnSpectatorState(player, false);
+    }
+
     private static void restoreDelayedRespawn(ServerPlayer player, ParticipantRespawn respawn) {
+        stopRespawnSpectating(player);
         teleportPlayerSafely(player, respawn.level(), respawn.spawnPos());
         setPlayerSpawn(player, respawn.level(), findSafeSpawnNear(respawn.level(), respawn.spawnPos(), 8, 4).orElse(respawn.spawnPos()));
         player.setGameMode(GameType.SURVIVAL);
@@ -3311,15 +3506,22 @@ public class WarDayCommands {
     private record EntityTemplateSpawn(int spawnedCount, int failedCount) {
     }
 
-    private record RosterPlayer(UUID id, String name) {
+    private record RosterPlayer(UUID id, String name, WarDayRosterHealth.Snapshot health) {
+    }
+
+    private record RosterLine(net.minecraft.network.chat.Component display, NumberFormat numberFormat) {
     }
 
     private record ParticipantRespawn(ServerLevel level, BlockPos spawnPos, Item matchBlock) {
     }
 
-    private record PendingRespawn(int ticksRemaining, ParticipantRespawn participant) {
+    private record PendingRespawn(int ticksRemaining, ParticipantRespawn participant, UUID spectatorTargetId) {
         private PendingRespawn tick() {
-            return new PendingRespawn(ticksRemaining - 1, participant);
+            return new PendingRespawn(ticksRemaining - 1, participant, spectatorTargetId);
+        }
+
+        private PendingRespawn withSpectatorTarget(UUID targetId) {
+            return new PendingRespawn(ticksRemaining, participant, targetId);
         }
     }
 }

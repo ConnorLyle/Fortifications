@@ -195,6 +195,26 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }
 
+var rosterHealthTest = tasks.register('rosterHealthTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayRosterHealthTest'
+}
+
+var spectatorCycleTest = tasks.register('spectatorCycleTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDaySpectatorCycleTest'
+}
+
+tasks.named('check') {
+    dependsOn rosterHealthTest, spectatorCycleTest
+}
+
+tasks.named('test', Test) {
+    failOnNoDiscoveredTests = false
+}
+
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
 idea {
     module {
