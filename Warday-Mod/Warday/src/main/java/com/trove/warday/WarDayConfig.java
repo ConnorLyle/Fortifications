@@ -11,6 +11,8 @@ public final class WarDayConfig {
     public static final ModConfigSpec.IntValue MAX_BASE_CHUNKS;
     public static final ModConfigSpec.IntValue MAX_BASE_FOOTPRINT_BLOCKS;
     public static final ModConfigSpec.IntValue WAR_DAY_BASE_Y;
+    public static final ModConfigSpec.IntValue ATTACKER_TERRAIN_RADIUS_CHUNKS;
+    public static final ModConfigSpec.IntValue MAX_ATTACKER_TERRAIN_CHUNKS;
     public static final ModConfigSpec.IntValue MAX_PREPARED_ENTITIES;
     public static final ModConfigSpec.IntValue RESPAWN_DELAY_SECONDS;
     public static final ModConfigSpec.IntValue MATCH_DURATION_SECONDS;
@@ -19,6 +21,7 @@ public final class WarDayConfig {
     public static final ModConfigSpec.IntValue DIG_LIMIT_BLOCKS;
     public static final ModConfigSpec.IntValue DIG_LIMIT_WINDOW_SECONDS;
     public static final ModConfigSpec.IntValue DIG_PENALTY_SECONDS;
+    public static final ModConfigSpec.IntValue DIG_PENALTY_PERCENT;
     public static final ModConfigSpec.ConfigValue<String> DEFENDER_MATCH_BLOCK;
     public static final ModConfigSpec.ConfigValue<String> ATTACKER_MATCH_BLOCK;
     public static final ModConfigSpec.ConfigValue<String> WAR_DAY_DIMENSION;
@@ -54,6 +57,12 @@ public final class WarDayConfig {
         WAR_DAY_BASE_Y = builder
                 .comment("Preview target Y level for copied base origins during /warday prepare.")
                 .defineInRange("warDayBaseY", 80, -64, 320);
+        ATTACKER_TERRAIN_RADIUS_CHUNKS = builder
+                .comment("Square chunk radius copied around the attacker spawn marker. 8 copies a 17x17 chunk terrain window before the defender base is overlaid.")
+                .defineInRange("attackerTerrainRadiusChunks", 8, 0, 12);
+        MAX_ATTACKER_TERRAIN_CHUNKS = builder
+                .comment("Safety limit for the attacker terrain copy. Increase deliberately before using a radius larger than 8 chunks.")
+                .defineInRange("maxAttackerTerrainChunks", 289, 1, 625);
         MAX_PREPARED_ENTITIES = builder
                 .comment("Maximum persistent non-player entities captured from both copied areas and recreated for each match. Set to 0 to disable entity templates.")
                 .defineInRange("maxPreparedEntities", 256, 0, 4096);
@@ -79,14 +88,17 @@ public final class WarDayConfig {
                 .comment("Only placeable block for attacker-team participants during War Day.")
                 .define("attackerMatchBlock", "minecraft:red_wool");
         DIG_LIMIT_BLOCKS = builder
-                .comment("Blocks a player may dig inside the rolling dig-limit window before receiving the digging penalty.")
-                .defineInRange("digLimitBlocks", 10, 1, 512);
+                .comment("Successful block breaks inside the rolling window that trigger the rapid-breaking penalty.")
+                .defineInRange("digLimitBlocks", 15, 1, 512);
         DIG_LIMIT_WINDOW_SECONDS = builder
                 .comment("Rolling window in seconds used for the digging penalty.")
                 .defineInRange("digLimitWindowSeconds", 30, 1, 300);
         DIG_PENALTY_SECONDS = builder
                 .comment("Seconds of glowing and mining slowdown applied when a player exceeds the dig limit.")
                 .defineInRange("digPenaltySeconds", 60, 1, 600);
+        DIG_PENALTY_PERCENT = builder
+                .comment("Percentage removed from block-breaking speed while the rapid-breaking penalty is active.")
+                .defineInRange("digPenaltyPercent", 25, 1, 100);
         builder.pop();
 
         SPEC = builder.build();

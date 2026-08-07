@@ -129,6 +129,7 @@ dependencies {
     implementation "curse.maven:ftb-teams-forge-404468:7878281"
     implementation "curse.maven:ftb-chunks-forge-314906:7608681"
     compileOnly files('../../mods/curios-neoforge-9.5.1+1.21.1.jar')
+    compileOnly files('../../mods/journeymap-api-neoforge-2.0.0-1.21.1.jar')
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -207,8 +208,26 @@ var spectatorCycleTest = tasks.register('spectatorCycleTest', JavaExec) {
     mainClass = 'com.trove.warday.WarDaySpectatorCycleTest'
 }
 
+var attackerTerrainPlanTest = tasks.register('attackerTerrainPlanTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayAttackerTerrainPlanTest'
+}
+
+var journeyMapPrivacyTest = tasks.register('journeyMapPrivacyTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayTeamVisibilityTest'
+}
+
+var rapidBreakRuleTest = tasks.register('rapidBreakRuleTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayRapidBreakRuleTest'
+}
+
 tasks.named('check') {
-    dependsOn rosterHealthTest, spectatorCycleTest
+    dependsOn rosterHealthTest, spectatorCycleTest, attackerTerrainPlanTest, journeyMapPrivacyTest, rapidBreakRuleTest
 }
 
 tasks.named('test', Test) {

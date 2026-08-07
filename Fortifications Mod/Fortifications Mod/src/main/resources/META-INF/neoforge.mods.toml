@@ -29,3 +29,10 @@ config="fortifications.mixins.json"
     versionRange="${minecraft_version_range}"
     ordering="NONE"
     side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="default_skill_trees"
+    type="optional"
+    versionRange="[1,)"
+    ordering="AFTER"
+    side="BOTH"

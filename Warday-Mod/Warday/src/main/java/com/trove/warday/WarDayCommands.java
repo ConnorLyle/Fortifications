@@ -51,6 +51,9 @@ import net.minecraft.world.entity.decoration.Painting;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.Item;
@@ -64,6 +67,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Objective;
@@ -72,6 +76,7 @@ import net.minecraft.world.scores.ScoreAccess;
 import net.minecraft.world.scores.ScoreHolder;
 import net.minecraft.world.scores.criteria.ObjectiveCriteria;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -81,6 +86,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
 
@@ -112,12 +118,14 @@ public class WarDayCommands {
     private static final String MATCH_ENTITY_BATCH = "warday_match_entity_batch";
     private static final String PREPARED_DECORATIVE_MARKER = "warday_prepared_decorative";
     private static final String WARDAY_ROSTER_OBJECTIVE = "warday_roster";
+    private static final ResourceLocation RAPID_BREAK_PENALTY_ID = ResourceLocation.fromNamespaceAndPath(WarDayMod.MODID, "rapid_break_penalty");
     private static final int ROSTER_PLAYERS_PER_TEAM_PAGE = 6;
     private static final long ROSTER_PAGE_TICKS = 100L;
     private static final SuggestionProvider<CommandSourceStack> TEAM_NAME_SUGGESTIONS = WarDayCommands::suggestTeamNames;
     private static final Map<UUID, PendingRespawn> PENDING_RESPAWNS = new HashMap<>();
     private static final Map<UUID, Integer> DEATH_COUNTS = new HashMap<>();
     private static final Map<UUID, Deque<Long>> DIG_HISTORY = new HashMap<>();
+    private static final Map<UUID, RapidBreakPenalty> RAPID_BREAK_PENALTIES = new HashMap<>();
     private static ServerBossEvent matchTimerBossBar;
     private static MinecraftServer matchTimerBossBarServer;
     private static long lastBossBarSeconds = Long.MIN_VALUE;
@@ -371,22 +379,34 @@ public class WarDayCommands {
 
         if (!teamACheck.passed() || (attackerCheck != null && !attackerCheck.passed())) {
             source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                    "Destination conflicts found; clearing transformed claimed areas before paste."), true);
+                    "Destination conflicts found; clearing the bounded War Day arena before paste."), true);
+        }
+
+        int arenaWiped = wipeDestinationArena(targetLevel);
+        int arenaDecorationsCleared = clearDestinationArenaDecorativeEntities(targetLevel);
+        source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                "Cleared " + arenaWiped + " blocks and " + arenaDecorationsCleared
+                        + " hanging entities from the bounded arena so repeated prepares cannot leave stale terrain."), true);
+
+        Optional<BlockPos> safeAttackerSpawn = Optional.empty();
+        if (attackerPlan.isPresent()) {
+            PlacementPlan plan = attackerPlan.get();
+            CopyResult attackerResult = copyBase(attackerSourceLevel, targetLevel, plan);
+            EntityCopyResult attackerEntityResult = copyDecorativeEntities(attackerSourceLevel, targetLevel, plan);
+            source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                    "Copied attacker terrain background: " + attackerResult.blocksCopied()
+                            + " blocks, " + attackerResult.blockEntitiesCopied() + " block entities, "
+                            + attackerResult.containersCleared() + " containers cleared, "
+                            + attackerEntityResult.entitiesCopied() + " decorative entities, "
+                            + attackerEntityResult.itemFramesCleared() + " item frames cleared, "
+                            + attackerEntityResult.entitiesFailed() + " decorative entities failed validation/copy."), true);
         }
 
         int teamAWiped = wipeDestinationArea(defenderSourceLevel, targetLevel, teamAPlan);
         int teamADecorationsCleared = clearDestinationDecorativeEntities(targetLevel, teamAPlan);
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                "Cleared " + teamAWiped + " defender destination blocks and " + teamADecorationsCleared
-                        + " existing hanging entities from transformed claimed chunks."), true);
-        if (attackerPlan.isPresent()) {
-            int attackerWiped = wipeDestinationArea(attackerSourceLevel, targetLevel, attackerPlan.get());
-            int attackerDecorationsCleared = clearDestinationDecorativeEntities(targetLevel, attackerPlan.get());
-            source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                    "Cleared " + attackerWiped + " attacker destination blocks and " + attackerDecorationsCleared
-                            + " existing hanging entities from transformed claimed chunks."), true);
-        }
-
+                "Cleared " + teamAWiped + " defender overlay blocks and " + teamADecorationsCleared
+                        + " background hanging entities so defender air and structures win all overlaps."), true);
         CopyResult teamAResult = copyBase(defenderSourceLevel, targetLevel, teamAPlan);
         EntityCopyResult teamAEntityResult = copyDecorativeEntities(defenderSourceLevel, targetLevel, teamAPlan);
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
@@ -396,27 +416,19 @@ public class WarDayCommands {
                         + teamAEntityResult.entitiesCopied() + " decorative entities, "
                         + teamAEntityResult.itemFramesCleared() + " item frames cleared, "
                         + teamAEntityResult.entitiesFailed() + " decorative entities failed validation/copy."), true);
-        Optional<BlockPos> safeAttackerSpawn = Optional.empty();
         if (attackerPlan.isPresent()) {
             PlacementPlan plan = attackerPlan.get();
-            CopyResult attackerResult = copyBase(attackerSourceLevel, targetLevel, plan);
-            EntityCopyResult attackerEntityResult = copyDecorativeEntities(attackerSourceLevel, targetLevel, plan);
             safeAttackerSpawn = findSafeSpawnPos(targetLevel, plan);
             if (safeAttackerSpawn.isEmpty()) {
                 source.sendFailure(message(ChatFormatting.RED,
-                        "Copied attacker spawn area, but no safe two-block-tall landing spot was found near "
+                        "Copied attacker terrain, but no safe two-block-tall landing spot was found near "
                                 + formatPos(plan.targetAnchorPos()) + ". Move the attacker spawn marker or clear space above it, then rerun /warday prepare confirm."));
                 return 0;
             }
             BlockPos spawnPos = safeAttackerSpawn.get();
             source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                    "Copied attacker spawn area: " + attackerResult.blocksCopied()
-                            + " blocks, " + attackerResult.blockEntitiesCopied() + " block entities, "
-                            + attackerResult.containersCleared() + " containers cleared, "
-                            + attackerEntityResult.entitiesCopied() + " decorative entities, "
-                            + attackerEntityResult.itemFramesCleared() + " item frames cleared, "
-                            + attackerEntityResult.entitiesFailed() + " decorative entities failed validation/copy. Safe spawn at "
-                            + formatPos(spawnPos)), true);
+                    "Validated safe attacker spawn at " + formatPos(spawnPos)
+                            + " after applying the defender overlay."), true);
         }
         int entityLimit = WarDayConfig.MAX_PREPARED_ENTITIES.getAsInt();
         Set<UUID> capturedEntityRoots = new HashSet<>();
@@ -623,6 +635,7 @@ public class WarDayCommands {
         configureWorldBorder(warDayLevel, state.copiedNexusPos().get());
         spawnNexusMarker(warDayLevel, state, state.copiedNexusPos().get());
         DEATH_COUNTS.clear();
+        clearRapidBreakPenalties(source.getServer());
         DIG_HISTORY.clear();
         PENDING_RESPAWNS.clear();
         int staleEntityClonesRemoved = clearPreparedMatchEntities(warDayLevel);
@@ -779,9 +792,19 @@ public class WarDayCommands {
 
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
-        if (event.getEntity() instanceof ServerPlayer player && matchTimerBossBar != null) {
-            matchTimerBossBar.removePlayer(player);
+        if (event.getEntity() instanceof ServerPlayer player) {
+            if (matchTimerBossBar != null) {
+                matchTimerBossBar.removePlayer(player);
+            }
+            clearRapidBreakPenalty(player, player.serverLevel().getGameTime());
+            DIG_HISTORY.remove(player.getUUID());
         }
+    }
+
+    @SubscribeEvent
+    public void onServerStopping(ServerStoppingEvent event) {
+        clearRapidBreakPenalties(event.getServer());
+        DIG_HISTORY.clear();
     }
 
     @SubscribeEvent
@@ -789,6 +812,8 @@ public class WarDayCommands {
         WarDayState state = WarDayState.get(event.getServer());
         if (!state.isActive()) {
             PENDING_RESPAWNS.clear();
+            clearRapidBreakPenalties(event.getServer());
+            DIG_HISTORY.clear();
             hideMatchTimerBossBar(event.getServer());
             return;
         }
@@ -797,6 +822,10 @@ public class WarDayCommands {
         long rosterGameTime = warDayLevel
                 .map(ServerLevel::getGameTime)
                 .orElse(event.getServer().overworld().getGameTime());
+        tickRapidBreakPenalties(event.getServer(), rosterGameTime);
+        if (rosterGameTime % 20L == 0L) {
+            pruneDigHistory(rosterGameTime);
+        }
         if (rosterScoreboardServer != event.getServer() || rosterGameTime % 20L == 0L) {
             syncWarDaySidebar(event.getServer(), state, rosterGameTime, false);
         }
@@ -927,7 +956,6 @@ public class WarDayCommands {
         }
 
         if (!event.getState().is(WarDayMod.NEXUS.get()) || !event.getPos().equals(nexusPos)) {
-            trackDiggingPenalty(player, level.getGameTime());
             return;
         }
 
@@ -947,6 +975,31 @@ public class WarDayCommands {
                 breaker + " destroyed the nexus.",
                 breaker
         );
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public void onSuccessfulParticipantBlockBreak(BlockEvent.BreakEvent event) {
+        if (event.isCanceled()
+                || !(event.getLevel() instanceof ServerLevel level)
+                || !(event.getPlayer() instanceof ServerPlayer player)) {
+            return;
+        }
+
+        WarDayState state = WarDayState.get(level.getServer());
+        UUID playerId = player.getUUID();
+        if (!state.isCombatActive()
+                || state.copiedNexusPos().isEmpty()
+                || !level.dimension().location().toString().equals(state.warDayDimension())
+                || player.gameMode.getGameModeForPlayer() != GameType.SURVIVAL
+                || !(state.isDefenderParticipant(playerId) || state.isAttackerParticipant(playerId))
+                || !isInMatchBounds(event.getPos(), state.copiedNexusPos().get())
+                || event.getState().is(WarDayMod.NEXUS.get())
+                || event.getState().is(WarDayMod.FORWARD_MARKER.get())
+                || event.getState().is(WarDayMod.ATTACKER_SPAWN.get())) {
+            return;
+        }
+
+        trackDiggingPenalty(player, level.getGameTime());
     }
 
     @SubscribeEvent
@@ -1058,6 +1111,7 @@ public class WarDayCommands {
         hideMatchTimerBossBar(server);
         PENDING_RESPAWNS.clear();
         DEATH_COUNTS.clear();
+        clearRapidBreakPenalties(server);
         DIG_HISTORY.clear();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             if (state.savedPlayer(player.getUUID()).isPresent()) {
@@ -1428,6 +1482,7 @@ public class WarDayCommands {
 
     private static int endActiveWarDay(MinecraftServer server, WarDayState state) {
         hideMatchTimerBossBar(server);
+        clearRapidBreakPenalties(server);
         int restored = 0;
         Map<UUID, WarDayState.PlayerSnapshot> snapshots = state.savedPlayers();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
@@ -1945,22 +2000,121 @@ public class WarDayCommands {
 
     private static void trackDiggingPenalty(ServerPlayer player, long gameTime) {
         int windowTicks = WarDayConfig.DIG_LIMIT_WINDOW_SECONDS.getAsInt() * 20;
-        int limit = WarDayConfig.DIG_LIMIT_BLOCKS.getAsInt();
+        int threshold = WarDayConfig.DIG_LIMIT_BLOCKS.getAsInt();
         Deque<Long> digs = DIG_HISTORY.computeIfAbsent(player.getUUID(), ignored -> new ArrayDeque<>());
-        while (!digs.isEmpty() && gameTime - digs.peekFirst() > windowTicks) {
-            digs.removeFirst();
-        }
-
-        digs.addLast(gameTime);
-        if (digs.size() <= limit) {
+        WarDayRapidBreakRule.TrackResult result = WarDayRapidBreakRule.recordBreak(
+                digs,
+                gameTime,
+                windowTicks,
+                threshold
+        );
+        if (!result.triggered()) {
             return;
         }
 
         int durationTicks = WarDayConfig.DIG_PENALTY_SECONDS.getAsInt() * 20;
+        int penaltyPercent = WarDayConfig.DIG_PENALTY_PERCENT.getAsInt();
+        AttributeInstance blockBreakSpeed = player.getAttribute(Attributes.BLOCK_BREAK_SPEED);
+        if (blockBreakSpeed != null) {
+            blockBreakSpeed.addOrUpdateTransientModifier(new AttributeModifier(
+                    RAPID_BREAK_PENALTY_ID,
+                    WarDayRapidBreakRule.blockBreakSpeedModifier(penaltyPercent),
+                    AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL
+            ));
+        }
+
+        RapidBreakPenalty existingPenalty = RAPID_BREAK_PENALTIES.get(player.getUUID());
+        MobEffectInstance previousGlowing = existingPenalty == null
+                ? Optional.ofNullable(player.getEffect(MobEffects.GLOWING)).map(MobEffectInstance::new).orElse(null)
+                : existingPenalty.previousGlowing();
+        long startGameTime = existingPenalty == null ? gameTime : existingPenalty.startGameTime();
+        RAPID_BREAK_PENALTIES.put(
+                player.getUUID(),
+                new RapidBreakPenalty(startGameTime, gameTime + durationTicks, previousGlowing)
+        );
         player.addEffect(new MobEffectInstance(MobEffects.GLOWING, durationTicks, 0, false, true, true));
-        player.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN, durationTicks, 0, false, true, true));
-        player.displayClientMessage(message(ChatFormatting.YELLOW, "Digging penalty applied."), true);
-        digs.clear();
+        player.displayClientMessage(message(ChatFormatting.YELLOW,
+                "Rapid-breaking penalty: -" + penaltyPercent + "% block-breaking speed and Glowing for "
+                        + WarDayConfig.DIG_PENALTY_SECONDS.getAsInt() + " seconds ("
+                        + result.recentBreaks() + " breaks in " + WarDayConfig.DIG_LIMIT_WINDOW_SECONDS.getAsInt()
+                        + " seconds)."), false);
+    }
+
+    private static void pruneDigHistory(long gameTime) {
+        int windowTicks = WarDayConfig.DIG_LIMIT_WINDOW_SECONDS.getAsInt() * 20;
+        Iterator<Map.Entry<UUID, Deque<Long>>> iterator = DIG_HISTORY.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Deque<Long> breaks = iterator.next().getValue();
+            WarDayRapidBreakRule.prune(breaks, gameTime, windowTicks);
+            if (breaks.isEmpty()) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private static void tickRapidBreakPenalties(MinecraftServer server, long gameTime) {
+        Iterator<Map.Entry<UUID, RapidBreakPenalty>> iterator = RAPID_BREAK_PENALTIES.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<UUID, RapidBreakPenalty> entry = iterator.next();
+            ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
+            if (player == null) {
+                iterator.remove();
+                continue;
+            }
+            if (gameTime >= entry.getValue().endGameTime()) {
+                finishRapidBreakPenalty(player, entry.getValue(), gameTime);
+                iterator.remove();
+            }
+        }
+    }
+
+    private static void clearRapidBreakPenalty(ServerPlayer player, long gameTime) {
+        RapidBreakPenalty penalty = RAPID_BREAK_PENALTIES.remove(player.getUUID());
+        if (penalty == null) {
+            removeRapidBreakModifier(player);
+            return;
+        }
+
+        finishRapidBreakPenalty(player, penalty, gameTime);
+    }
+
+    private static void finishRapidBreakPenalty(ServerPlayer player, RapidBreakPenalty penalty, long gameTime) {
+        removeRapidBreakModifier(player);
+
+        player.removeEffect(MobEffects.GLOWING);
+        MobEffectInstance previousGlowing = penalty.previousGlowing();
+        if (previousGlowing == null) {
+            return;
+        }
+        long elapsed = Math.max(0L, gameTime - penalty.startGameTime());
+        int remaining = (int) Math.max(0L, previousGlowing.getDuration() - elapsed);
+        if (remaining > 0) {
+            player.addEffect(new MobEffectInstance(
+                    previousGlowing.getEffect(),
+                    remaining,
+                    previousGlowing.getAmplifier(),
+                    previousGlowing.isAmbient(),
+                    previousGlowing.isVisible(),
+                    previousGlowing.showIcon()
+            ));
+        }
+    }
+
+    private static void clearRapidBreakPenalties(MinecraftServer server) {
+        for (UUID playerId : List.copyOf(RAPID_BREAK_PENALTIES.keySet())) {
+            ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+            if (player != null) {
+                clearRapidBreakPenalty(player, player.serverLevel().getGameTime());
+            }
+        }
+        RAPID_BREAK_PENALTIES.clear();
+    }
+
+    private static void removeRapidBreakModifier(ServerPlayer player) {
+        AttributeInstance blockBreakSpeed = player.getAttribute(Attributes.BLOCK_BREAK_SPEED);
+        if (blockBreakSpeed != null) {
+            blockBreakSpeed.removeModifier(RAPID_BREAK_PENALTY_ID);
+        }
     }
 
     private static void buildNexusShell(ServerLevel level, BlockPos nexusPos) {
@@ -2219,10 +2373,11 @@ public class WarDayCommands {
         }
 
         BaseArea teamA = BaseArea.from(teamAValidation, context.chunkManager());
-        Optional<AttackerArea> attackerArea = attackerValidation.map(validation -> AttackerArea.from(validation, context.chunkManager()));
+        Optional<AttackerArea> attackerArea = attackerValidation.map(AttackerArea::from);
         boolean teamAWithinLimits = reportAndCheckGuardrails(source, teamA);
+        boolean attackerWithinLimits = attackerArea.map(area -> reportAndCheckAttackerGuardrails(source, area)).orElse(true);
 
-        if (!teamAWithinLimits) {
+        if (!teamAWithinLimits || !attackerWithinLimits) {
             return Optional.empty();
         }
 
@@ -2523,6 +2678,17 @@ public class WarDayCommands {
         return passed;
     }
 
+    private static boolean reportAndCheckAttackerGuardrails(CommandSourceStack source, AttackerArea attackerArea) {
+        int maxChunks = WarDayConfig.MAX_ATTACKER_TERRAIN_CHUNKS.getAsInt();
+        boolean passed = attackerArea.cluster().size() <= maxChunks;
+        ChatFormatting color = passed ? ChatFormatting.GREEN : ChatFormatting.RED;
+        source.sendSuccess(() -> message(color,
+                attackerArea.team().getName().getString()
+                        + " terrain guardrail: radius " + WarDayConfig.ATTACKER_TERRAIN_RADIUS_CHUNKS.getAsInt()
+                        + " chunks, selected " + attackerArea.cluster().size() + "/" + maxChunks + " chunks"), false);
+        return passed;
+    }
+
     private static void reportPlacementPlan(CommandSourceStack source, PlacementPlan plan) {
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
                 plan.label() + " placement"), false);
@@ -2535,6 +2701,17 @@ public class WarDayCommands {
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "- target footprint: [" + plan.targetMinX() + ", " + plan.targetMinZ() + "] to ["
                         + plan.targetMaxX() + ", " + plan.targetMaxZ() + "]"), false);
+        int totalColumns = plan.cluster().size() * 256;
+        int copyableColumns = plan.copyableColumnCount();
+        source.sendSuccess(() -> message(copyableColumns == totalColumns ? ChatFormatting.GRAY : ChatFormatting.YELLOW,
+                "- arena clipping: " + copyableColumns + "/" + totalColumns + " source columns inside the configured border"), false);
+        ServerLevel sourceLevel = source.getServer().getLevel(plan.dimension());
+        if (sourceLevel != null) {
+            long unloadedChunks = plan.cluster().stream().filter(chunk -> !sourceLevel.hasChunk(chunk.x(), chunk.z())).count();
+            source.sendSuccess(() -> message(unloadedChunks == 0 ? ChatFormatting.GRAY : ChatFormatting.YELLOW,
+                    "- source loading: " + (plan.cluster().size() - unloadedChunks) + " loaded, " + unloadedChunks
+                            + " will be loaded or generated during confirm"), false);
+        }
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "- rotation: " + plan.rotationDescription()), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
@@ -2553,23 +2730,33 @@ public class WarDayCommands {
         for (ChunkDimPos chunk : plan.cluster()) {
             int minX = chunk.x() * 16;
             int minZ = chunk.z() * 16;
-            for (int x = minX; x < minX + 16; x++) {
-                for (int z = minZ; z < minZ + 16; z++) {
-                    for (int y = sourceLevel.getMinBuildHeight(); y < sourceLevel.getMaxBuildHeight(); y++) {
+            LevelChunk sourceChunk = sourceLevel.getChunk(chunk.x(), chunk.z());
+            for (int sectionY = sourceLevel.getMinBuildHeight(); sectionY < sourceLevel.getMaxBuildHeight(); sectionY += 16) {
+                if (sourceChunk.getSection(sourceLevel.getSectionIndex(sectionY)).hasOnlyAir()) {
+                    continue;
+                }
+                int sectionMaxY = Math.min(sectionY + 16, sourceLevel.getMaxBuildHeight());
+                for (int x = minX; x < minX + 16; x++) {
+                    for (int z = minZ; z < minZ + 16; z++) {
+                        for (int y = sectionY; y < sectionMaxY; y++) {
                         BlockPos sourcePos = new BlockPos(x, y, z);
-                        BlockState sourceState = sourceLevel.getBlockState(sourcePos);
+                        BlockState sourceState = sourceChunk.getBlockState(sourcePos);
                         if (sourceState.isAir()) {
                             continue;
                         }
 
-                        checked++;
                         BlockPos targetPos = plan.targetPos(sourcePos);
+                        if (!plan.containsTargetColumn(targetPos)) {
+                            continue;
+                        }
+                        checked++;
                         if (targetPos.getY() < targetLevel.getMinBuildHeight() || targetPos.getY() >= targetLevel.getMaxBuildHeight()) {
                             continue;
                         }
                         if (!targetLevel.getBlockState(targetPos).isAir()) {
                             return new CopyCheck(false, checked, 1, targetPos);
                         }
+                    }
                     }
                 }
             }
@@ -2594,16 +2781,25 @@ public class WarDayCommands {
         for (ChunkDimPos chunk : plan.cluster()) {
             int minX = chunk.x() * 16;
             int minZ = chunk.z() * 16;
-            for (int x = minX; x < minX + 16; x++) {
-                for (int z = minZ; z < minZ + 16; z++) {
-                    for (int y = sourceLevel.getMinBuildHeight(); y < sourceLevel.getMaxBuildHeight(); y++) {
+            LevelChunk sourceChunk = sourceLevel.getChunk(chunk.x(), chunk.z());
+            for (int sectionY = sourceLevel.getMinBuildHeight(); sectionY < sourceLevel.getMaxBuildHeight(); sectionY += 16) {
+                if (sourceChunk.getSection(sourceLevel.getSectionIndex(sectionY)).hasOnlyAir()) {
+                    continue;
+                }
+                int sectionMaxY = Math.min(sectionY + 16, sourceLevel.getMaxBuildHeight());
+                for (int x = minX; x < minX + 16; x++) {
+                    for (int z = minZ; z < minZ + 16; z++) {
+                        for (int y = sectionY; y < sectionMaxY; y++) {
                         BlockPos sourcePos = new BlockPos(x, y, z);
-                        BlockState sourceState = sourceLevel.getBlockState(sourcePos);
+                        BlockState sourceState = sourceChunk.getBlockState(sourcePos);
                         if (sourceState.isAir()) {
                             continue;
                         }
 
                         BlockPos targetPos = plan.targetPos(sourcePos);
+                        if (!plan.containsTargetColumn(targetPos)) {
+                            continue;
+                        }
                         if (targetPos.getY() < targetLevel.getMinBuildHeight() || targetPos.getY() >= targetLevel.getMaxBuildHeight()) {
                             continue;
                         }
@@ -2628,6 +2824,7 @@ public class WarDayCommands {
                             }
                         }
                     }
+                    }
                 }
             }
         }
@@ -2644,6 +2841,9 @@ public class WarDayCommands {
                 for (int z = minZ; z < minZ + 16; z++) {
                     for (int y = sourceLevel.getMinBuildHeight(); y < sourceLevel.getMaxBuildHeight(); y++) {
                         BlockPos targetPos = plan.targetPos(new BlockPos(x, y, z));
+                        if (!plan.containsTargetColumn(targetPos)) {
+                            continue;
+                        }
                         if (targetPos.getY() < targetLevel.getMinBuildHeight()
                                 || targetPos.getY() >= targetLevel.getMaxBuildHeight()) {
                             continue;
@@ -2657,6 +2857,59 @@ public class WarDayCommands {
             }
         }
         return wiped;
+    }
+
+    private static int wipeDestinationArena(ServerLevel targetLevel) {
+        int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+        int wiped = 0;
+        int minChunk = Math.floorDiv(-halfSize, 16);
+        int maxChunk = Math.floorDiv(halfSize - 1, 16);
+        for (int chunkX = minChunk; chunkX <= maxChunk; chunkX++) {
+            for (int chunkZ = minChunk; chunkZ <= maxChunk; chunkZ++) {
+                LevelChunk targetChunk = targetLevel.getChunk(chunkX, chunkZ);
+                int minX = Math.max(-halfSize, chunkX * 16);
+                int maxX = Math.min(halfSize, chunkX * 16 + 16);
+                int minZ = Math.max(-halfSize, chunkZ * 16);
+                int maxZ = Math.min(halfSize, chunkZ * 16 + 16);
+                for (int sectionY = targetLevel.getMinBuildHeight(); sectionY < targetLevel.getMaxBuildHeight(); sectionY += 16) {
+                    if (targetChunk.getSection(targetLevel.getSectionIndex(sectionY)).hasOnlyAir()) {
+                        continue;
+                    }
+                    int sectionMaxY = Math.min(sectionY + 16, targetLevel.getMaxBuildHeight());
+                    for (int x = minX; x < maxX; x++) {
+                        for (int z = minZ; z < maxZ; z++) {
+                            for (int y = sectionY; y < sectionMaxY; y++) {
+                                BlockPos targetPos = new BlockPos(x, y, z);
+                                if (!targetChunk.getBlockState(targetPos).isAir()) {
+                                    targetLevel.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3);
+                                    wiped++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return wiped;
+    }
+
+    private static int clearDestinationArenaDecorativeEntities(ServerLevel targetLevel) {
+        int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+        AABB targetBounds = new AABB(
+                -halfSize,
+                targetLevel.getMinBuildHeight(),
+                -halfSize,
+                halfSize,
+                targetLevel.getMaxBuildHeight(),
+                halfSize
+        );
+        List<Entity> existingDecorations = targetLevel.getEntities(
+                (Entity) null,
+                targetBounds,
+                WarDayCommands::isAllowedDecorativeEntity
+        );
+        existingDecorations.forEach(Entity::discard);
+        return existingDecorations.size();
     }
 
     private static int clearDestinationDecorativeEntities(ServerLevel targetLevel, PlacementPlan plan) {
@@ -2687,7 +2940,7 @@ public class WarDayCommands {
                 (Entity) null,
                 sourceBounds,
                 entity -> !entity.isPassenger()
-                        && plan.containsSourceChunk(entity.blockPosition())
+                        && plan.containsSourceBlock(entity.blockPosition())
                         && entity.getSelfAndPassengers().allMatch(WarDayCommands::isAllowedPreparedEntity)
         );
 
@@ -2705,7 +2958,14 @@ public class WarDayCommands {
             int entityTreeSize = countEntityTree(tag);
             boolean targetPositionsValid = sourceEntity.getSelfAndPassengers().allMatch(entity -> {
                 double targetY = plan.targetY(entity.getY());
-                return targetY >= targetLevel.getMinBuildHeight() && targetY < targetLevel.getMaxBuildHeight();
+                BlockPos targetPos = BlockPos.containing(
+                        plan.targetX(entity.getX(), entity.getZ()),
+                        targetY,
+                        plan.targetZ(entity.getX(), entity.getZ())
+                );
+                return targetY >= targetLevel.getMinBuildHeight()
+                        && targetY < targetLevel.getMaxBuildHeight()
+                        && plan.containsTargetColumn(targetPos);
             });
             if (!targetPositionsValid || capturedEntities + entityTreeSize > remainingCapacity) {
                 skippedEntities += entityTreeSize;
@@ -2910,7 +3170,7 @@ public class WarDayCommands {
                 sourceBounds,
                 entity -> isAllowedDecorativeEntity(entity)
                         && entity instanceof HangingEntity hangingEntity
-                        && plan.containsSourceChunk(hangingEntity.getPos())
+                        && plan.containsSourceBlock(hangingEntity.getPos())
         );
 
         for (Entity sourceEntity : entities) {
@@ -3213,22 +3473,21 @@ public class WarDayCommands {
             ClusterBounds bounds,
             ResourceKey<Level> dimension
     ) {
-        private static AttackerArea from(AttackerValidation validation, ClaimedChunkManager chunkManager) {
+        private static AttackerArea from(AttackerValidation validation) {
             AttackerSpawn spawn = validation.spawn();
-            Set<ChunkDimPos> cluster = attackerSpawnCluster(validation.team(), spawn, chunkManager);
+            Set<ChunkDimPos> cluster = attackerTerrainCluster(spawn, WarDayConfig.ATTACKER_TERRAIN_RADIUS_CHUNKS.getAsInt());
             return new AttackerArea(validation.team(), spawn, cluster, ClusterBounds.from(cluster), spawn.dimension());
         }
 
-        private static Set<ChunkDimPos> attackerSpawnCluster(Team team, AttackerSpawn spawn, ClaimedChunkManager chunkManager) {
+        private static Set<ChunkDimPos> attackerTerrainCluster(AttackerSpawn spawn, int radiusChunks) {
             ChunkDimPos spawnChunk = spawn.chunkDimPos();
-            Set<ChunkDimPos> cluster = connectedClaimCluster(team, spawnChunk, chunkManager);
-            if (cluster.contains(spawnChunk)) {
-                return cluster;
+            Set<ChunkDimPos> cluster = new HashSet<>();
+            for (int chunkX = spawnChunk.x() - radiusChunks; chunkX <= spawnChunk.x() + radiusChunks; chunkX++) {
+                for (int chunkZ = spawnChunk.z() - radiusChunks; chunkZ <= spawnChunk.z() + radiusChunks; chunkZ++) {
+                    cluster.add(new ChunkDimPos(spawn.dimension(), new ChunkPos(chunkX, chunkZ)));
+                }
             }
-
-            Set<ChunkDimPos> clusterWithSpawn = new HashSet<>(cluster);
-            clusterWithSpawn.add(spawnChunk);
-            return clusterWithSpawn;
+            return Set.copyOf(cluster);
         }
     }
 
@@ -3353,8 +3612,33 @@ public class WarDayCommands {
             return cluster.contains(new ChunkDimPos(dimension, new ChunkPos(sourcePos)));
         }
 
+        private boolean containsSourceBlock(BlockPos sourcePos) {
+            return containsSourceChunk(sourcePos) && containsTargetColumn(targetPos(sourcePos));
+        }
+
         private boolean containsTargetBlock(BlockPos targetPos) {
-            return containsSourceChunk(sourcePos(targetPos));
+            return containsTargetColumn(targetPos) && containsSourceChunk(sourcePos(targetPos));
+        }
+
+        private boolean containsTargetColumn(BlockPos targetPos) {
+            return WarDayAttackerTerrainPlan.insideArena(
+                    targetPos.getX(), targetPos.getZ(), WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt());
+        }
+
+        private int copyableColumnCount() {
+            int columns = 0;
+            for (ChunkDimPos chunk : cluster) {
+                int minX = chunk.x() * 16;
+                int minZ = chunk.z() * 16;
+                for (int x = minX; x < minX + 16; x++) {
+                    for (int z = minZ; z < minZ + 16; z++) {
+                        if (containsTargetColumn(targetPos(new BlockPos(x, anchorPos.getY(), z)))) {
+                            columns++;
+                        }
+                    }
+                }
+            }
+            return columns;
         }
 
         private BlockPos sourcePos(BlockPos targetPos) {
@@ -3432,7 +3716,13 @@ public class WarDayCommands {
                 }
             }
 
-            return new TargetFootprint(minX, minZ, maxX, maxZ);
+            int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+            return new TargetFootprint(
+                    Math.max(minX, -halfSize),
+                    Math.max(minZ, -halfSize),
+                    Math.min(maxX, halfSize - 1),
+                    Math.min(maxZ, halfSize - 1)
+            );
         }
 
         private BlockPos rotateOffset(int x, int y, int z) {
@@ -3510,6 +3800,9 @@ public class WarDayCommands {
     }
 
     private record RosterLine(net.minecraft.network.chat.Component display, NumberFormat numberFormat) {
+    }
+
+    private record RapidBreakPenalty(long startGameTime, long endGameTime, MobEffectInstance previousGlowing) {
     }
 
     private record ParticipantRespawn(ServerLevel level, BlockPos spawnPos, Item matchBlock) {

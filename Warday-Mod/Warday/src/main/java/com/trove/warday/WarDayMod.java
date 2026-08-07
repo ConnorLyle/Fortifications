@@ -13,6 +13,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -57,6 +58,9 @@ public class WarDayMod {
         CREATIVE_MODE_TABS.register(modEventBus);
         modContainer.registerConfig(ModConfig.Type.SERVER, WarDayConfig.SPEC);
         NeoForge.EVENT_BUS.register(new WarDayCommands());
+        if (ModList.get().isLoaded("journeymap")) {
+            WarDayJourneyMapPrivacy.register();
+        }
     }
 
     private static BlockBehaviour.Properties warDayBlockProperties() {
