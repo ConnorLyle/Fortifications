@@ -77,10 +77,20 @@ Do not begin implementation until that assessment has been presented. If the use
 - `/warday prepare confirm` now clears only positions mapped from the actual source claim cluster before paste. It no longer wipes unclaimed holes inside the cluster's rectangular bounding footprint.
 - The Fortifications mod registers a synced `fortifications:unarmed_damage` player attribute and has a global `FortificationsMod.GLOBAL_ACTIVE` flag.
 - `FortificationBlockRules` excludes Warday setup blocks from Fortifications hardening so admin/event marker blocks are not accidentally fortified.
+- Fortifications' nine Relics/reliquified item mixins now target the Relics 0.12 `AbilityStatTemplate.StatTemplateBuilder.targetValue(...)` API. Their frozen and additive balance values were converted from the removed 0.11 `upgradeModifier(...)` API so they retain the intended per-level behavior.
+- Seven Relics/reliquified event-mixin classes containing nine redirects now target `AbilityRankModifierData.isEnabled()` instead of the removed Relics 0.11 `AbilityData.isRankModifierUnlocked(String)` method.
+- The Fortifications compile-only dependencies now match the current pack versions of Relics 0.12.8, Iron's Spells 3.16.2, and Tunes & Tomes 1.1.0-HOTFIX.
 - Recipe/loot datapack overrides exist under the Fortifications mod resources for several third-party mods, including `artifacts`, `relics`, `alexscaves`, and `sophisticatedbackpacks`.
-- Built jars are present in `MYTH MODS FOR DEREK`, including `warday-1.0.0.jar`, `fortifications-1.0.0.jar`, and `voxy-0.2.9-alpha.jar`.
+- The refreshed Warday and Fortifications distributables are present at `MYTH MODS FOR DEREK/warday-1.0.0.jar` and `MYTH MODS FOR DEREK/fortifications-1.0.0.jar`.
 
 ## Active/Halted Work
+
+- Fortifications Relics 0.12 compatibility was implemented after the 2026-08-06 client crashes showed required mixin injections scanning zero targets. The first launch exposed the removed `upgradeModifier(...)` target in item mixins; the next launch exposed the removed `isRankModifierUnlocked(...)` target in Sealed Sword and Shock Pendant event mixins. Source audit migrated every occurrence of both removed APIs rather than stopping at the reported failures.
+- `./gradlew.bat build --no-daemon --no-problems-report` succeeded on 2026-08-06 after transient OneDrive access-denial retries in NeoForge's generated `build/tmp` output. Static `javap` inspection confirmed every current Relics 0.12.8, Reliquified Artifacts 1.0.7, and Reliquified Iron's Spells 0.2.7 target method contains enough `initialValue(...)`, `targetValue(...)`, and `AbilityRankModifierData.isEnabled()` calls for all referenced mixin ordinals.
+- The build artifact and refreshed `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` are both 78,129 bytes with SHA-256 `60556314F177BDA3E892989A88C2377196467422BBCB86E61229C68DBC63BD5A`.
+- The same verified jar was deployed to the affected CurseForge instance at `fortif update 8 we're so back/mods/fortifications-1.0.0.jar`; its post-copy size and SHA-256 match the build artifact.
+- Both custom projects were rebuilt successfully and their distributables refreshed together on 2026-08-06. Warday is 116,294 bytes with SHA-256 `C5AEEBC0A78E339416520390263C884BE80AE9BE3EADA53751B94392DC59CD9A`; Fortifications retains the size and hash recorded above.
+- Minecraft runtime verification is still required in the exact CurseForge instance. Launch through mod construction, enter a world, and check affected Relics/reliquified item stats; a later incompatible mixin could surface only after the previously fatal injections are fixed.
 
 - Current implementation item: `WARDAY_TODO.md` section **Match presentation and HUD**, exact task **“Add a sidebar scoreboard that lists Team 1 and Team 2 and their participating players.”**
 - The sidebar uses custom score display components and blank number formatting rather than altering real player scoreboard teams. It renders both team headers plus up to six alphabetically sorted names per team and rotates five-second pages when needed.
@@ -111,11 +121,13 @@ Do not begin implementation until that assessment has been presented. If the use
 
 ## Next Immediate Steps
 
-1. Manually verify the sidebar layout, team membership, page rotation, offline-name fallback, restart reconstruction, cleanup, and restoration of a pre-existing sidebar objective.
-2. Manually verify the boss bar during start/countdown, death/respawn, logout/reconnect, server restart, defender timeout, nexus victory, `/warday end`, fanfare transition, and a second match. Confirm there are no stale or duplicate HUD elements.
-3. Run the entity carryover manual matrix from the first `WARDAY_TODO.md` item, including tamed wolves, passenger trees, leashes, all rotations, an unclaimed-hole entity, the configured cap, repeated matches, and restart cleanup.
-4. Record successful runtime results beneath each applicable queue item before striking it through; keep any item with a failure or untested edge case unchecked.
-5. If the sidebar is readable in-game, implement the separate live-health queue item by extending the existing roster-line renderer, then continue the remaining manual and automated lifecycle coverage.
+1. Launch the updated CurseForge instance through mod construction. If it still fails, inspect the newly generated `latest.log`/crash report because the next failure may have been masked by the three fatal Relics mixin errors.
+2. In a world, verify Kinetic/Hunting Belt slots and Cloud in a Bottle jumps remain fixed at 2, sealed-weapon respawn time remains 120 seconds, and Night Vision Goggles, Power Glove, and Vampiric Glove additive stats still progress at their intended rates.
+3. Manually verify the sidebar layout, team membership, page rotation, offline-name fallback, restart reconstruction, cleanup, and restoration of a pre-existing sidebar objective.
+4. Manually verify the boss bar during start/countdown, death/respawn, logout/reconnect, server restart, defender timeout, nexus victory, `/warday end`, fanfare transition, and a second match. Confirm there are no stale or duplicate HUD elements.
+5. Run the entity carryover manual matrix from the first `WARDAY_TODO.md` item, including tamed wolves, passenger trees, leashes, all rotations, an unclaimed-hole entity, the configured cap, repeated matches, and restart cleanup.
+6. Record successful runtime results beneath each applicable queue item before striking it through; keep any item with a failure or untested edge case unchecked.
+7. If the sidebar is readable in-game, implement the separate live-health queue item by extending the existing roster-line renderer, then continue the remaining manual and automated lifecycle coverage.
 
 # 2. Architectural Decisions & Patterns
 
@@ -199,5 +211,5 @@ Do not begin implementation until that assessment has been presented. If the use
 - Active-match login, reconnect, deferred restoration, and pending-respawn state handling have been implemented. These paths still need full multiplayer/server-restart play-testing.
 - There is no explicit security model beyond command permission level 2. Operators can wipe/paste target areas with `/warday prepare confirm`.
 - There are no automated tests for the custom Warday validation/copy/lifecycle logic.
-- Git status could not be checked from this environment because Git was not installed on PATH.
+- Fortifications' Relics integration is implemented with required ordinal-based mixins into third-party bytecode. The current Relics/add-on versions were checked statically, but future upstream reordering can break those injections and should be re-audited whenever the pack updates those mods.
 - I did not identify any deliberately bypassed authentication, mocked auth, ignored validation, missing database indexes, or database memory leaks. The main risks are gameplay state correctness and expensive world scans.

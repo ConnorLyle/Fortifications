@@ -1,6 +1,6 @@
 package com.example.fortifications.mixin;
 
-import it.hurts.sskirillss.relics.api.relics.data.AbilityData;
+import it.hurts.sskirillss.relics.api.relics.data.AbilityRankModifierData;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -11,13 +11,13 @@ public abstract class ShockPendantCommonEventsMixin {
             method = "onLivingIncomingDamage",
             at = @At(
                     value = "INVOKE",
-                    target = "Lit/hurts/sskirillss/relics/api/relics/data/AbilityData;isRankModifierUnlocked(Ljava/lang/String;)Z",
+                    target = "Lit/hurts/sskirillss/relics/api/relics/data/AbilityRankModifierData;isEnabled()Z",
                     ordinal = 0,
                     remap = false
             ),
             remap = false
     )
-    private static boolean fortifications$disableResistance(AbilityData abilityData, String modifier) {
+    private static boolean fortifications$disableResistance(AbilityRankModifierData modifierData) {
         return false;
     }
 }

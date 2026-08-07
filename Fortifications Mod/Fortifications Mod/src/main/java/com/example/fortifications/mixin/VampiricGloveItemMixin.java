@@ -12,8 +12,8 @@ import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 public abstract class VampiricGloveItemMixin {
     private static final String INITIAL_VALUE_TARGET =
             "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;initialValue(DD)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
-    private static final String UPGRADE_MODIFIER_TARGET =
-            "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;upgradeModifier(Lit/hurts/sskirillss/relics/api/scaling_models/ScalingModel;D)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
+    private static final String TARGET_VALUE_TARGET =
+            "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;targetValue(Lit/hurts/sskirillss/relics/api/scaling_models/ScalingModel;D)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
 
     @ModifyArgs(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = INITIAL_VALUE_TARGET, ordinal = 0, remap = false), remap = false)
     private void fortifications$setLifesteal(Args args) {
@@ -21,14 +21,14 @@ public abstract class VampiricGloveItemMixin {
         args.set(1, 0.03D);
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 0, remap = false), index = 0, remap = false)
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 0, remap = false), index = 0, remap = false)
     private ScalingModel fortifications$useAdditiveLifestealScaling(ScalingModel originalModel) {
         return RelicsScalingModels.ADDITIVE.get();
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 0, remap = false), index = 1, remap = false)
-    private double fortifications$setLifestealScaling(double originalModifier) {
-        return 0.0025D;
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 0, remap = false), index = 1, remap = false)
+    private double fortifications$setLifestealScaling(double originalTarget) {
+        return 0.055D;
     }
 
     @ModifyArgs(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = INITIAL_VALUE_TARGET, ordinal = 1, remap = false), remap = false)
@@ -37,9 +37,9 @@ public abstract class VampiricGloveItemMixin {
         args.set(1, 0.005D);
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 1, remap = false), index = 1, remap = false)
-    private double fortifications$disableStreakHealScaling(double originalModifier) {
-        return 0.0D;
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 1, remap = false), index = 1, remap = false)
+    private double fortifications$disableStreakHealScaling(double originalTarget) {
+        return 0.005D;
     }
 
     @ModifyArgs(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = INITIAL_VALUE_TARGET, ordinal = 4, remap = false), remap = false)
@@ -48,8 +48,8 @@ public abstract class VampiricGloveItemMixin {
         args.set(1, 0.10D);
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 4, remap = false), index = 1, remap = false)
-    private double fortifications$disableKillHealScaling(double originalModifier) {
-        return 0.0D;
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 4, remap = false), index = 1, remap = false)
+    private double fortifications$disableKillHealScaling(double originalTarget) {
+        return 0.10D;
     }
 }

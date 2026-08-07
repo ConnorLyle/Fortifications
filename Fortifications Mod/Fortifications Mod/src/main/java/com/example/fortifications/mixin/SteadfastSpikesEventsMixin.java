@@ -1,6 +1,6 @@
 package com.example.fortifications.mixin;
 
-import it.hurts.sskirillss.relics.api.relics.data.AbilityData;
+import it.hurts.sskirillss.relics.api.relics.data.AbilityRankModifierData;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -9,19 +9,19 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 public abstract class SteadfastSpikesEventsMixin {
     @Redirect(
             method = "onLivingKnockBack",
-            at = @At(value = "INVOKE", target = "Lit/hurts/sskirillss/relics/api/relics/data/AbilityData;isRankModifierUnlocked(Ljava/lang/String;)Z", ordinal = 1, remap = false),
+            at = @At(value = "INVOKE", target = "Lit/hurts/sskirillss/relics/api/relics/data/AbilityRankModifierData;isEnabled()Z", ordinal = 1, remap = false),
             remap = false
     )
-    private static boolean fortifications$disableAnchorKnockbackResistance(AbilityData abilityData, String modifier) {
+    private static boolean fortifications$disableAnchorKnockbackResistance(AbilityRankModifierData modifierData) {
         return false;
     }
 
     @Redirect(
             method = "onLivingSlipping",
-            at = @At(value = "INVOKE", target = "Lit/hurts/sskirillss/relics/api/relics/data/AbilityData;isRankModifierUnlocked(Ljava/lang/String;)Z", ordinal = 1, remap = false),
+            at = @At(value = "INVOKE", target = "Lit/hurts/sskirillss/relics/api/relics/data/AbilityRankModifierData;isEnabled()Z", ordinal = 1, remap = false),
             remap = false
     )
-    private static boolean fortifications$disableAnchorFrictionResistance(AbilityData abilityData, String modifier) {
+    private static boolean fortifications$disableAnchorFrictionResistance(AbilityRankModifierData modifierData) {
         return false;
     }
 }

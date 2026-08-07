@@ -12,8 +12,8 @@ import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 public abstract class NightVisionGogglesItemMixin {
     private static final String INITIAL_VALUE_TARGET =
             "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;initialValue(DD)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
-    private static final String UPGRADE_MODIFIER_TARGET =
-            "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;upgradeModifier(Lit/hurts/sskirillss/relics/api/scaling_models/ScalingModel;D)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
+    private static final String TARGET_VALUE_TARGET =
+            "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;targetValue(Lit/hurts/sskirillss/relics/api/scaling_models/ScalingModel;D)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
 
     @ModifyArgs(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = INITIAL_VALUE_TARGET, ordinal = 1, remap = false), remap = false)
     private void fortifications$setEvasionChance(Args args) {
@@ -21,14 +21,14 @@ public abstract class NightVisionGogglesItemMixin {
         args.set(1, 0.05D);
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 1, remap = false), index = 0, remap = false)
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 1, remap = false), index = 0, remap = false)
     private ScalingModel fortifications$useAdditiveEvasionScaling(ScalingModel originalModel) {
         return RelicsScalingModels.ADDITIVE.get();
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 1, remap = false), index = 1, remap = false)
-    private double fortifications$setEvasionScaling(double originalModifier) {
-        return 0.0025D;
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 1, remap = false), index = 1, remap = false)
+    private double fortifications$setEvasionScaling(double originalTarget) {
+        return 0.075D;
     }
 
     @ModifyArgs(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = INITIAL_VALUE_TARGET, ordinal = 2, remap = false), remap = false)
@@ -37,13 +37,13 @@ public abstract class NightVisionGogglesItemMixin {
         args.set(1, 0.15D);
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 2, remap = false), index = 0, remap = false)
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 2, remap = false), index = 0, remap = false)
     private ScalingModel fortifications$useAdditiveAmbushScaling(ScalingModel originalModel) {
         return RelicsScalingModels.ADDITIVE.get();
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 2, remap = false), index = 1, remap = false)
-    private double fortifications$setAmbushScaling(double originalModifier) {
-        return 0.0025D;
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 2, remap = false), index = 1, remap = false)
+    private double fortifications$setAmbushScaling(double originalTarget) {
+        return 0.175D;
     }
 }

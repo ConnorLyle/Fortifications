@@ -14,8 +14,8 @@ import org.spongepowered.asm.mixin.injection.ModifyArgs;
 public abstract class PowerGloveItemMixin {
     private static final String INITIAL_VALUE_TARGET =
             "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;initialValue(DD)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
-    private static final String UPGRADE_MODIFIER_TARGET =
-            "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;upgradeModifier(Lit/hurts/sskirillss/relics/api/scaling_models/ScalingModel;D)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
+    private static final String TARGET_VALUE_TARGET =
+            "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;targetValue(Lit/hurts/sskirillss/relics/api/scaling_models/ScalingModel;D)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
 
     @Redirect(
             method = "constructDefaultRelicTemplate",
@@ -45,9 +45,9 @@ public abstract class PowerGloveItemMixin {
         args.set(1, 7.0D);
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 0, remap = false), index = 1, remap = false)
-    private double fortifications$disableHitsRequiredScaling(double originalModifier) {
-        return 0.0D;
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 0, remap = false), index = 1, remap = false)
+    private double fortifications$disableHitsRequiredScaling(double originalTarget) {
+        return 7.0D;
     }
 
     @ModifyArgs(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = INITIAL_VALUE_TARGET, ordinal = 1, remap = false), remap = false)
@@ -56,13 +56,13 @@ public abstract class PowerGloveItemMixin {
         args.set(1, 0.15D);
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 1, remap = false), index = 0, remap = false)
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 1, remap = false), index = 0, remap = false)
     private ScalingModel fortifications$useAdditivePowerDamageScaling(ScalingModel originalModel) {
         return RelicsScalingModels.ADDITIVE.get();
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 1, remap = false), index = 1, remap = false)
-    private double fortifications$setPowerDamageScaling(double originalModifier) {
-        return 0.01D;
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 1, remap = false), index = 1, remap = false)
+    private double fortifications$setPowerDamageScaling(double originalTarget) {
+        return 0.25D;
     }
 }

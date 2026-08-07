@@ -1,6 +1,6 @@
 package com.example.fortifications.mixin;
 
-import it.hurts.sskirillss.relics.api.relics.data.AbilityData;
+import it.hurts.sskirillss.relics.api.relics.data.AbilityRankModifierData;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -9,19 +9,19 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 public abstract class PowerGloveCommonEventsMixin {
     @Redirect(
             method = "onLivingShieldBlock",
-            at = @At(value = "INVOKE", target = "Lit/hurts/sskirillss/relics/api/relics/data/AbilityData;isRankModifierUnlocked(Ljava/lang/String;)Z", remap = false),
+            at = @At(value = "INVOKE", target = "Lit/hurts/sskirillss/relics/api/relics/data/AbilityRankModifierData;isEnabled()Z", remap = false),
             remap = false
     )
-    private static boolean fortifications$disableShieldBreak(AbilityData abilityData, String modifier) {
+    private static boolean fortifications$disableShieldBreak(AbilityRankModifierData modifierData) {
         return false;
     }
 
     @Redirect(
             method = "onLivingIncomingDamageDealing",
-            at = @At(value = "INVOKE", target = "Lit/hurts/sskirillss/relics/api/relics/data/AbilityData;isRankModifierUnlocked(Ljava/lang/String;)Z", remap = false),
+            at = @At(value = "INVOKE", target = "Lit/hurts/sskirillss/relics/api/relics/data/AbilityRankModifierData;isEnabled()Z", remap = false),
             remap = false
     )
-    private static boolean fortifications$disableArmorPierce(AbilityData abilityData, String modifier) {
+    private static boolean fortifications$disableArmorPierce(AbilityRankModifierData modifierData) {
         return false;
     }
 }

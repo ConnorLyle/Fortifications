@@ -11,14 +11,14 @@ public abstract class HuntingBeltItemMixin {
             method = "constructDefaultRelicTemplate",
             at = @At(
                     value = "INVOKE",
-                    target = "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;upgradeModifier(Lit/hurts/sskirillss/relics/api/scaling_models/ScalingModel;D)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;",
+                    target = "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;targetValue(Lit/hurts/sskirillss/relics/api/scaling_models/ScalingModel;D)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;",
                     ordinal = 0,
                     remap = false
             ),
             index = 1,
             remap = false
     )
-    private double fortifications$disableHuntingBeltSlotScaling(double originalModifier) {
-        return 0.0D;
+    private double fortifications$disableHuntingBeltSlotScaling(double originalTarget) {
+        return 2.0D;
     }
 }

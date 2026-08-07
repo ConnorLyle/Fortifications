@@ -13,8 +13,8 @@ import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 public abstract class SealedClaymoreItemMixin {
     private static final String INITIAL_VALUE_TARGET =
             "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;initialValue(DD)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
-    private static final String UPGRADE_MODIFIER_TARGET =
-            "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;upgradeModifier(Lit/hurts/sskirillss/relics/api/scaling_models/ScalingModel;D)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
+    private static final String TARGET_VALUE_TARGET =
+            "Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;targetValue(Lit/hurts/sskirillss/relics/api/scaling_models/ScalingModel;D)Lit/hurts/sskirillss/relics/api/relics/abilities/stats/AbilityStatTemplate$StatTemplateBuilder;";
 
     @Redirect(
             method = "constructDefaultRelicTemplate",
@@ -33,9 +33,9 @@ public abstract class SealedClaymoreItemMixin {
         args.set(1, 120.0D);
     }
 
-    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 3, remap = false), index = 1, remap = false)
-    private double fortifications$disableRespawnTimeScaling(double originalModifier) {
-        return 0.0D;
+    @ModifyArg(method = "constructDefaultRelicTemplate", at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 3, remap = false), index = 1, remap = false)
+    private double fortifications$disableRespawnTimeScaling(double originalTarget) {
+        return 120.0D;
     }
 
     @ModifyArgs(
@@ -52,11 +52,11 @@ public abstract class SealedClaymoreItemMixin {
     @ModifyArg(
             method = "constructDefaultRelicTemplate",
             slice = @Slice(from = @At(value = "CONSTANT", args = "stringValue=damage_reduction_per_claymore")),
-            at = @At(value = "INVOKE", target = UPGRADE_MODIFIER_TARGET, ordinal = 0, remap = false),
+            at = @At(value = "INVOKE", target = TARGET_VALUE_TARGET, ordinal = 0, remap = false),
             index = 1,
             remap = false
     )
-    private double fortifications$disableGuardReductionScaling(double originalModifier) {
-        return 0.0D;
+    private double fortifications$disableGuardReductionScaling(double originalTarget) {
+        return 0.025D;
     }
 }
