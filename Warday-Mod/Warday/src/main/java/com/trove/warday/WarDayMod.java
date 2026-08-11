@@ -31,7 +31,7 @@ public class WarDayMod {
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
 
-    public static final DeferredBlock<NexusBlock> NEXUS = BLOCKS.register("nexus", () -> new NexusBlock(warDayBlockProperties()));
+    public static final DeferredBlock<NexusBlock> NEXUS = BLOCKS.register("nexus", () -> new NexusBlock(nexusBlockProperties()));
     public static final DeferredBlock<ForwardMarkerBlock> FORWARD_MARKER =
             BLOCKS.register("forward_marker", () -> new ForwardMarkerBlock(unbreakableWarDayBlockProperties()));
     public static final DeferredBlock<NexusBlock> ATTACKER_SPAWN = BLOCKS.register("attacker_spawn", () -> new NexusBlock(warDayBlockProperties()));
@@ -67,6 +67,13 @@ public class WarDayMod {
         return BlockBehaviour.Properties.of()
                 .mapColor(MapColor.COLOR_CYAN)
                 .strength(3.0F, 30.0F)
+                .sound(SoundType.GLASS);
+    }
+
+    private static BlockBehaviour.Properties nexusBlockProperties() {
+        return BlockBehaviour.Properties.of()
+                .mapColor(MapColor.COLOR_CYAN)
+                .strength(22.5F, 30.0F)
                 .sound(SoundType.GLASS);
     }
 

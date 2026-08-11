@@ -7,8 +7,12 @@ Validates mixin registration, exclusions, remap flags, and potential conflicts
 import json
 import re
 import os
+import sys
 from pathlib import Path
 from typing import List, Dict, Set, Tuple
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # Color codes
 RED = '\033[0;31m'
@@ -255,5 +259,4 @@ def main():
     return exit_code
 
 if __name__ == '__main__':
-    import sys
     sys.exit(main())

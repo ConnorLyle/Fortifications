@@ -49,10 +49,10 @@ Do not begin implementation until that assessment has been presented. If the use
 - The Warday mod has a command surface under `/warday` in `WarDayCommands`:
   - `/warday team1 <name>` and `/warday team2 <name>` configure FTB team names.
   - `/warday blocks` and `/warday kit` give setup blocks to an operator player.
-  - `/warday validate` scans for one defender-owned nexus, one defender-owned forward marker, and one attacker-owned spawn marker when Team B exists.
+  - `/warday validate` scans for one defender-owned nexus and one defender-owned forward marker. No attacker marker is required; Team 2 still comes from configuration.
   - `/warday scan` reports claimed-cluster and guardrail information without changing the world.
   - `/warday prepare` previews the copy plan.
-  - `/warday prepare confirm` copies a bounded attacker terrain window and overlays the rotated defender claimed cluster in the configured War Day dimension.
+  - `/warday prepare confirm` copies the complete terrain surrounding the defender nexus, rotates it with the defender orientation, overlays the defender claim, and calculates a safe attacker spawn beyond that claim.
   - `/warday status` reports prepared/active state and configured dimension status.
   - `/warday start` snapshots online players, teleports team members into the War Day dimension, puts non-participants in spectator, and assigns match blocks.
   - `/warday end` restores online players from saved snapshots.
@@ -62,7 +62,7 @@ Do not begin implementation until that assessment has been presented. If the use
   - `warday:attacker_spawn`
 - `ForwardMarkerBlock` persists horizontal facing, which is used for reporting the base orientation plan.
 - Defender base rotation has been started in `Warday-Mod/Warday/src/main/java/com/trove/warday/WarDayCommands.java`:
-  - `PlacementPlan` now rotates defender copied positions around the nexus so the forward marker faces east, toward the current attacker-side arena placement at positive X.
+  - `PlacementPlan` rotates defender and surrounding-terrain positions around the nexus so the forward marker faces the normalized attacker side at positive X.
   - Rotated target positions are used by destination conflict checks, full-height destination wiping, block copying, copied nexus state, decorative entity copying, and safe spawn searches.
   - Copied block states are rotated with `BlockState.rotate(...)`.
   - Copied decorative entity positions and yaw are rotated, and painting/item-frame tile coordinates are translated through the same rotated block-position path.
@@ -75,9 +75,13 @@ Do not begin implementation until that assessment has been presented. If the use
 - A server-owned boss-bar timer displays the authoritative combat countdown to all online match players, reconstructs from persisted state after restart, synchronizes login/logout, and disappears before the victory fanfare or any match cleanup path.
 - Separate server-owned defender/attacker roster objectives list both persisted teams, paginate every five seconds, and select a personalized view for each participant. Only teammates show a right-aligned health/status column; opponents retain names with blank status.
 - Online teammate health is displayed as numeric Minecraft health points such as `20/20`, with percentage coloring. Teammate pending respawns show `RESP Ns`, disconnected teammates show `OFF`, and cleanup returns clients to the current global sidebar.
-- Attacker terrain preparation derives the exact source rectangle needed to fill every arena column, clips chunk-edge overhang at the arena border, and previews the complete coverage explicitly. The attacker marker targets the positive-X arena edge inside that copied terrain (x=109 at default map size).
+- Terrain preparation derives the exact defender-nexus source rectangle needed to fill every arena column for all four rotations. The attacker spawn is generated beyond the rotated defender claim edge, aligned with the forward marker, and no attacker marker is issued or scanned.
+- The match nexus has hardness `22.5` and blast resistance `30`. A successful `/warday prepare confirm` ends with a bold green completion message only after prepared state is saved; it names the completed arena components and points to `/warday start`.
 - Active-combat friendly fire is canceled between players on the same persisted War Day side, including player-fired projectile sources; enemy and environmental damage remain unchanged.
 - Rapid-breaking strikes use cumulative exact slowdown tiers of 25%, 45%, 55%, and 60%, capped at 40% remaining mining speed, with the existing duration refreshed on every trigger.
+- Match-issued team blocks now carry `minecraft:custom_data` key `WardayTeamBlock` with side value `defender` or `attacker`. Replenishment counts only correctly marked stacks, and right-click/place validation rejects ordinary matching wool or the opposing side's tagged blocks.
+- During an active match, Warday blocks `enderstorage:ender_pouch`, block storage, vanilla chest boats/minecarts, item frames, and entities exposing NeoForge item handlers. Cleanup clears vanilla/mutable entity inventories before discarding storage entities.
+- Both `/warday end` and normal victory completion restore players, wipe the full bounded arena through the dimension build height, and discard every loaded non-player entity in the Warday dimension. Cleanup counts are logged; the wipe is intentionally arena-bounded rather than an infinite-dimension deletion.
 - `/warday validate` and `/warday scan` now narrow marker scanning to loaded claimed chunks owned by the configured teams within the validation radius instead of walking the entire full-height radius volume.
 - `/warday prepare confirm` now clears only positions mapped from the actual source claim cluster before paste. It no longer wipes unclaimed holes inside the cluster's rectangular bounding footprint.
 - The Fortifications mod registers a synced `fortifications:unarmed_damage` player attribute and has a global `FortificationsMod.GLOBAL_ACTIVE` flag.
@@ -86,15 +90,19 @@ Do not begin implementation until that assessment has been presented. If the use
 - Seven Relics/reliquified event-mixin classes containing nine redirects now target `AbilityRankModifierData.isEnabled()` instead of the removed Relics 0.11 `AbilityData.isRankModifierUnlocked(String)` method.
 - The Fortifications compile-only dependencies now match the current pack versions of Relics 0.12.8, Iron's Spells 3.16.2, and Tunes & Tomes 1.1.0-HOTFIX.
 - Recipe/loot datapack overrides exist under the Fortifications mod resources for several third-party mods, including `artifacts`, `relics`, `alexscaves`, and `sophisticatedbackpacks`.
+- Fortifications registers `fortifications:fort_chest`, displayed as **The FortChest**. It is a single-only 27-slot chest with vanilla chest opening, obstruction, hopper, comparator, naming, drop, and piglin behavior; its placed and inventory renderers use Minecraft 1.21.9's official single weathered-copper chest texture.
 - The refreshed Warday and Fortifications distributables are present at `MYTH MODS FOR DEREK/warday-1.0.0.jar` and `MYTH MODS FOR DEREK/fortifications-1.0.0.jar`.
 
 ## Active/Halted Work
 
+- The FortChest implementation adds a dedicated block entity type, vanilla chest renderer registration, a client material override, and a custom item renderer because Minecraft 1.21.1's built-in item renderer recognizes only literal vanilla chest blocks. Player placement and neighbor updates force `ChestType.SINGLE`, so adjacent FortChests never merge.
+- Texture provenance: extracted `assets/minecraft/textures/entity/chest/copper_weathered.png` from Mojang's official Minecraft Java 1.21.9 client JAR after verifying client SHA-1 `ce92fd8d1b2460c41ceda07ae7b3fe863a80d045`; the copied 64x64 texture has SHA-256 `EE104692F10C035A7A99A929FE8340E901DF6E1CABD4E672F0D7BB73A01E45F8`.
+- `./gradlew.bat build --no-daemon --no-problems-report` succeeded on 2026-08-11. JSON/resource package checks confirmed the block, block entity, renderer, mixin, model, loot table, and texture entries. The artifact and refreshed `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` are both 91,494 bytes with SHA-256 `E68D7CC26370240D424A7A241086927AFBE8A6B469DAF69A8360A4F0DCE98B10`.
+- FortChest runtime verification remains: obtain it from Functional Blocks or `/give @s fortifications:fort_chest`, verify held/inventory and placed textures, place two adjacent chests and confirm neither merges, test 27 slots plus save/reload, rename/drop, open obstruction and cat blocking, hopper insertion/extraction, comparator output, opening animation/sound, and break/drop behavior.
 - Fortifications Relics 0.12 compatibility was implemented after the 2026-08-06 client crashes showed required mixin injections scanning zero targets. The first launch exposed the removed `upgradeModifier(...)` target in item mixins; the next launch exposed the removed `isRankModifierUnlocked(...)` target in Sealed Sword and Shock Pendant event mixins. Source audit migrated every occurrence of both removed APIs rather than stopping at the reported failures.
 - `./gradlew.bat build --no-daemon --no-problems-report` succeeded on 2026-08-06 after transient OneDrive access-denial retries in NeoForge's generated `build/tmp` output. Static `javap` inspection confirmed every current Relics 0.12.8, Reliquified Artifacts 1.0.7, and Reliquified Iron's Spells 0.2.7 target method contains enough `initialValue(...)`, `targetValue(...)`, and `AbilityRankModifierData.isEnabled()` calls for all referenced mixin ordinals.
-- The build artifact and refreshed `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` are both 78,129 bytes with SHA-256 `60556314F177BDA3E892989A88C2377196467422BBCB86E61229C68DBC63BD5A`.
-- The same verified jar was deployed to the affected CurseForge instance at `fortif update 8 we're so back/mods/fortifications-1.0.0.jar`; its post-copy size and SHA-256 match the build artifact.
-- Both custom projects were rebuilt successfully and their distributables refreshed together on 2026-08-06. Warday is 116,294 bytes with SHA-256 `C5AEEBC0A78E339416520390263C884BE80AE9BE3EADA53751B94392DC59CD9A`; Fortifications retains the size and hash recorded above.
+- The earlier Relics-only Fortifications artifact was deployed to the affected CurseForge instance at `fortif update 8 we're so back/mods/fortifications-1.0.0.jar`; that deployed copy is now superseded by the FortChest build recorded above and has not yet been refreshed in the instance.
+- Both custom projects were rebuilt successfully and their distributables refreshed together on 2026-08-06. That historical Fortifications artifact and its hashes are superseded by the current FortChest artifact recorded above.
 - Minecraft runtime verification is still required in the exact CurseForge instance. Launch through mod construction, enter a world, and check affected Relics/reliquified item stats; a later incompatible mixin could surface only after the previously fatal injections are fixed.
 
 - Current implementation item: `WARDAY_TODO.md` section **Anti-grief rule**, exact task **“Add a configurable rapid-block-breaking punishment.”**
@@ -103,19 +111,19 @@ Do not begin implementation until that assessment has been presented. If the use
 - `WarDayRapidBreakRuleTest` covers the 15th-break boundary, rolling-window expiry, retrigger reset, exact modifier conversion, all four tiers, and the cap. The 2026-08-10 full build passed; current artifact evidence is recorded below.
 - The rapid-break item remains unchecked pending the full gameplay/exemption/lifecycle/configuration matrix recorded in `WARDAY_TODO.md`.
 - Current user-requested combat update: `WARDAY_TODO.md` section **Combat rules**, exact task **“Disable friendly fire between participants on the same persisted War Day team during active combat.”** `LivingIncomingDamageEvent` now cancels same-side player damage in the Warday dimension, including projectile sources. `WarDayFriendlyFireTest` covers both teams, opponents, and outsiders; runtime weapon/mod interaction checks remain required.
-- Final Warday verification on 2026-08-10: `gradle build --no-daemon --no-problems-report` succeeded with all focused checks (`rosterHealthTest`, `spectatorCycleTest`, `attackerTerrainPlanTest`, `journeyMapPrivacyTest`, `rapidBreakRuleTest`, and `friendlyFireTest`). The build artifact and refreshed `MYTH MODS FOR DEREK/warday-1.0.0.jar` are both 149,836 bytes with SHA-256 `772DC96C1511DA62DA51E4D1A2165C50A874FF7EAA3C40C537A7E62AE308ECE3`.
+- Final Warday verification on 2026-08-11: `gradle build --no-daemon --no-problems-report` succeeded with all focused checks after the tagged-block, portable/entity-storage, and end-cleanup changes. The build artifact and refreshed `MYTH MODS FOR DEREK/warday-1.0.0.jar` are both 149,681 bytes with SHA-256 `86135FD12D5C885DE50EE4FE1F039B0B9BFB74EEF500AE8883D9B7FC727B208C`.
 - Previous implementation item: `WARDAY_TODO.md` section **Skills and map privacy**, exact task **“Investigate and implement the strongest feasible JourneyMap integration/configuration that hides non-teammate player icons while retaining teammate icons.”**
 - Installed JourneyMap 6.0.3/API 2.0.0 exposes a server-side per-receiver/per-target `PlayerRadarUpdateEvent`. Warday now subscribes when JourneyMap is loaded and preserves visibility only when both players resolve to the same FTB Team ID. It never makes a JourneyMap-hidden player visible, applies globally including operators, and fails closed when team state is unavailable.
 - `WarDayTeamVisibilityTest` covers same/different/missing teams and preservation of stricter JourneyMap decisions. `gradle build --no-daemon --no-problems-report` succeeded with all four focused checks; packaged metadata confirms the optional 6.0.x dependency. The artifact and refreshed `MYTH MODS FOR DEREK/warday-1.0.0.jar` are both 139,208 bytes with SHA-256 `79A9AB4ED1BE5D313940A9CA4AB5826266F8948EF18C2AC381ABA30B0C7CA651`.
 - The JourneyMap item remains unchecked pending multiplayer minimap/fullscreen, team-change, operator, dimension, reconnect/restart, server-option, and optional-mod-absence verification recorded in `WARDAY_TODO.md`.
 - Previous implementation item: `WARDAY_TODO.md` section **Skills and map privacy**, exact task **“Remove the combat and mining skill trees from the shipped gameplay/configuration.”**
 - The Fortifications JAR now overrides `data/puffish_skills/puffish_skills/config.json` with a version-3 empty category list and declares an optional load-after relationship with `default_skill_trees`. This suppresses only that pack's combat/mining registration and presentation; the independent `fortifications_classes` tree remains available, and legacy player category data is left inert rather than deleted.
-- `.\gradlew.bat build --no-daemon --no-problems-report` succeeded on 2026-08-07. Static JAR inspection confirmed both the override and metadata ordering. The artifact and refreshed `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` are both 78,638 bytes with SHA-256 `9E7137E7ABA02BD5009005D3A2E6056274A4F378DE3700FD092F96116D4525EB`.
+- `.\gradlew.bat build --no-daemon --no-problems-report` succeeded on 2026-08-07. Static JAR inspection confirmed both the override and metadata ordering; that earlier artifact is superseded by the current FortChest build recorded above.
 - This item remains unchecked pending runtime verification with existing/new player data, `/reload`, Classes-tree visibility, inactive legacy rewards, and with the optional default-trees JAR absent.
 - Previous implementation item: `WARDAY_TODO.md` section **Arena preparation**, exact task **“Rework the attacker-side arena copy strategy so substantially more surrounding terrain/chunks are brought into War Day instead of relying on terrain generated between a small attacker spawn copy and the defender base.”**
-- Attacker terrain now derives the exact source rectangle that maps to the full configured arena instead of using a marker-centered radius. Intersecting source chunks are selected under the existing chunk guardrail, and all block/entity copying remains clipped to the arena independently of chunk alignment or negative coordinates. The legacy radius config key is retained but ignored.
-- `/warday prepare` explicitly reports complete arena coverage, exact target bounds, eastern-edge spawn target, clipped columns, and loaded/unloaded source chunks. Confirm clears the full bounded arena, copies the attacker background, then clears and applies the defender overlay last.
-- `WarDayAttackerTerrainPlanTest` covers full 250x250 windows, edge placement, negative floor division, border semantics, and the default 289-chunk guardrail. The 2026-08-10 full build passed; current artifact evidence is recorded below.
+- Terrain derives the exact source rectangle surrounding the defender nexus that maps to the configured arena, including even-size rotation correction. Intersecting chunks remain guarded and block/entity copying remains border-clipped. The legacy radius key is retained but ignored.
+- `/warday prepare` reports complete coverage, target bounds, rotation, and the automatic claim-outskirts spawn. Confirm clears the arena, copies/rotates the surrounding terrain, then applies the defender overlay last. Surface-height spawn search refuses positions inside the defender footprint.
+- `WarDayAttackerTerrainPlanTest` covers all rotations, exact 250x250 windows, claim-edge gap/clamping/failure, negative floor division, border semantics, and the default guardrail. Runtime orientation and landing checks remain required.
 - The attacker-terrain item remains unchecked pending in-game source/target comparison, overlap, repeat-prepare, entity, safe-spawn, border, source-generation, and performance verification recorded in `WARDAY_TODO.md`.
 - Previous implementation item: `WARDAY_TODO.md` section **Respawn experience**, exact task **“During respawn cooldown, make the dead player spectate a living teammate in first-person POV when one is available.”**
 - Respawn spectators select only online, living, non-spectator, non-respawning members of the viewer's persisted team in the War Day dimension. Ordering is stable by name/UUID; invalid targets are replaced automatically, and a viewer with no target remains above team spawn until a teammate becomes eligible.
@@ -144,28 +152,30 @@ Do not begin implementation until that assessment has been presented. If the use
 - The entity-position correction previously built successfully at SHA-256 `05277987197345962CA438506ED73E64AD9EEAD4E34CDE7DCBD14D75B4E183EA`; that artifact has now been superseded by the boss-bar build recorded above.
 - A preceding `gradle clean build --no-daemon` attempt compiled the source but encountered a transient Windows access denial in NeoForge's generated `build/tmp` output; a normal retry compiled and produced the JAR, then hit a OneDrive collision replacing Gradle's generated problems report. Disabling that optional report produced the clean successful build above.
 - The entity task and nested tamed-entity task remain unchecked because no Minecraft runtime test was performed. NBT fidelity, AI/tame behavior, leash recreation, passenger trees, entity caps, cleanup, and restart behavior remain manual-verification requirements.
-- The rotation implementation assumes the defender target facing is east because the defender anchor is arena center and the attacker anchor is the positive-X arena edge.
+- The normalized defender target facing is east; automatic attacker placement uses the positive-X edge of the rotated defender claim rather than a fixed arena anchor.
 - The most likely half-finished area is Warday gameplay completion, not compilation:
   - Defender base rotation compiles and has calculation-level coverage, but still needs in-game validation.
-  - Attacker spawn areas remain unrotated because they do not have a forward marker/orientation marker.
+  - Surrounding terrain now shares the defender forward-marker rotation; there is no separate attacker spawn area.
   - Persistent non-player entities use the prepared-template path; decorative `Painting` and `ItemFrame` entities use a separate copy path.
   - Item frames are copied but their items are cleared.
   - Containers are copied structurally but their contents are cleared.
   - Prepared/copied War Day claim shapes are cleared over the source dimension's mapped vertical range before paste.
   - Team B can be absent for validation/prepare one-team testing, but `/warday start` requires both configured teams.
-- The worktree contains uncommitted personalized-health, respawn-spectating, exact attacker-terrain/edge-spawn, friendly-fire, skill-tree-removal, JourneyMap privacy, and cumulative rapid-break implementations, their tests/resources, networking/client-control additions, documentation updates, and refreshed distributables. The repository-level `mods` directory also holds untracked local compile-only dependencies restored from the active CurseForge instance. Preserve them and inspect `git diff` before further edits.
+- The worktree contains uncommitted personalized-health, respawn-spectating, exact attacker-terrain/automatic-spawn, friendly-fire, tagged team-block anti-cheat, Ender pouch/entity-storage blocking, end cleanup wipe, skill-tree removal, JourneyMap privacy, and cumulative rapid-break implementations plus tests/resources/docs and refreshed distributables. Preserve unrelated local dependencies and inspect `git diff` before further edits.
 
 ## Next Immediate Steps
 
 1. Launch the updated CurseForge instance through mod construction. If it still fails, inspect the newly generated `latest.log`/crash report because the next failure may have been masked by the three fatal Relics mixin errors.
 2. In a world, verify Kinetic/Hunting Belt slots and Cloud in a Bottle jumps remain fixed at 2, sealed-weapon respawn time remains 120 seconds, and Night Vision Goggles, Power Glove, and Vampiric Glove additive stats still progress at their intended rates.
-3. Manually verify the exact attacker terrain preparation matrix under Arena preparation, especially all-edge/full-route coverage, eastern-edge spawn safety, defender overlap priority, border clipping, repeat prepare, and responsiveness.
-4. Verify only the Classes Puffish tree remains, then run the JourneyMap privacy matrix, all four rapid-break tiers, and the friendly-fire weapon/projectile matrix from `WARDAY_TODO.md`.
-5. Manually verify respawn teammate POV and both mouse-cycle directions with multiple teammates and an opponent, including target loss, no-target recovery, reconnect/restart, cooldown completion, fanfare, cleanup, ordinary spectators, and a second match.
-6. Manually verify personalized sidebars: each participant sees only teammate health/status, vanilla full health reads `20/20`, opponent names remain visible without values, and external sidebar coexistence/restoration survives lifecycle paths.
-7. Manually verify the boss bar during start/countdown, death/respawn, logout/reconnect, server restart, defender timeout, nexus victory, `/warday end`, fanfare transition, and a second match. Confirm there are no stale or duplicate HUD elements.
-8. Run the entity carryover manual matrix from the first `WARDAY_TODO.md` item, including tamed wolves, passenger trees, leashes, all rotations, an unclaimed-hole entity, the configured cap, repeated matches, and restart cleanup.
-9. Record successful runtime results beneath each applicable queue item before striking it through; keep any item with a failure or untested edge case unchecked.
+3. Manually verify automatic terrain/spawn preparation for all four defender directions, especially full coverage, spawn outside irregular claim edges, surface safety, cramped-claim rejection, defender overlap, repeat prepare, and responsiveness.
+4. Test tagged team blocks with pre-owned wool, stolen opposing stacks, split/drop/pickup, start/respawn/reconnect replenishment, then exercise Ender pouches and vanilla/modded entity storage.
+5. Populate the arena and storage entities, run `/warday end` and both victory paths, and confirm the arena is air, all non-player entities are gone, server-log cleanup counts are credible, and a second prepare starts cleanly.
+6. Verify only the Classes Puffish tree remains, then run the JourneyMap privacy matrix, all four rapid-break tiers, and the friendly-fire weapon/projectile matrix from `WARDAY_TODO.md`.
+7. Manually verify respawn teammate POV and both mouse-cycle directions with multiple teammates and an opponent, including target loss, no-target recovery, reconnect/restart, cooldown completion, fanfare, cleanup, ordinary spectators, and a second match.
+8. Manually verify personalized sidebars: each participant sees only teammate health/status, vanilla full health reads `20/20`, opponent names remain visible without values, and external sidebar coexistence/restoration survives lifecycle paths.
+9. Manually verify the boss bar during start/countdown, death/respawn, logout/reconnect, server restart, defender timeout, nexus victory, `/warday end`, fanfare transition, and a second match. Confirm there are no stale or duplicate HUD elements.
+10. Run the entity carryover manual matrix from the first `WARDAY_TODO.md` item, including tamed wolves, passenger trees, leashes, all rotations, an unclaimed-hole entity, the configured cap, repeated matches, and restart cleanup.
+11. Record successful runtime results beneath each applicable queue item before striking it through; keep any item with a failure or untested edge case unchecked.
 
 # 2. Architectural Decisions & Patterns
 
@@ -193,13 +203,13 @@ Do not begin implementation until that assessment has been presented. If the use
 
 - Claim cluster resolution is a breadth-first search over 4-neighbor chunk adjacency. `connectedClaimCluster` starts at the nexus chunk and walks only chunks owned by the same team.
 - Defender validation requires exactly one owned nexus, exactly one owned forward marker, and the marker chunk must be inside the connected claim cluster rooted at the nexus.
-- Attacker validation requires exactly one owned attacker spawn marker.
+- Attacker marker validation and scanning were removed. `/warday blocks` issues only the defender nexus and forward marker; the legacy attacker block remains registered for world compatibility but has no preparation role.
 - Defender guardrails check connected cluster size and footprint width/depth. Attacker terrain derives exact arena coverage and retains its independent chunk-count guardrail.
 - Copy preparation computes a source cluster bounding box, an anchor offset from source min, rotation from defender forward marker facing to east, and target coordinates. It preserves vertical coordinates relative to the source anchor and target Y.
 - Marker validation iterates chunk coordinates in the configured radius, rejects unloaded/unclaimed chunks and claims owned by unrelated teams, then scans only relevant claimed chunks for setup blocks.
 - Destination checking scans non-air source blocks inside the arena and detects whether transformed target positions are already occupied; all-air source sections are skipped.
-- Preparation clears the full bounded target arena for stale-free repeated copies, copies the clipped unrotated attacker terrain background, then clears and overlays the rotated defender claim shape. The target dimension must remain dedicated to War Day.
-- Safe attacker spawn selection first tries one block above the target anchor, then searches nearby positions for solid ground and two collision-free/fluid-free player spaces.
+- Preparation clears the full bounded target arena, copies the rotated defender-surrounding terrain background, then clears and overlays the defender claim shape. The target dimension must remain dedicated to War Day.
+- Automatic spawn selection prefers a 16-block gap beyond the rotated claim edge, aligns Z with the transformed forward marker, clamps inside the border, and searches nearby copied surface columns for two collision-free/fluid-free player spaces outside the claim footprint.
 - Respawn delay uses a per-tick countdown map keyed by player UUID and restores survival/game spawn when the delay expires.
 
 # 3. Data & Infrastructure
@@ -234,11 +244,11 @@ Do not begin implementation until that assessment has been presented. If the use
 
 - `WarDayCommands` is very large and mixes command registration, validation, copy/paste, event handlers, persistence coordination, and reporting. It should eventually be split into services such as validation, placement/copy, lifecycle, and respawn handling.
 - Defender base rotation has source-level implementation, but it is uncompiled and untested in-game. Treat it as pending verification, especially for modded blocks, block entities with directional NBT, paintings, and item frames.
-- Attacker spawn-area rotation is not implemented. There is currently no attacker orientation marker, so attacker areas are copied without rotation.
+- Surrounding terrain uses the same rotation as the defender base; the attacker marker is obsolete but remains registered to avoid breaking existing worlds.
 - Several gameplay values are effectively hardcoded:
   - Match block target count is `32`.
   - Defender target anchor is `[0, warDayBaseY, 0]`.
-  - Attacker target anchor is the positive-X arena edge with a scaled safety inset (`[109, warDayBaseY, 0]` at default map size).
+  - Attacker spawn is calculated at runtime beyond the rotated defender claim's positive-X footprint, with a preferred 16-block gap and border clamp.
   - Spectators/respawning players are placed 11 blocks above spawn.
   - Safe spawn search radius is 8 blocks horizontally and 4 blocks vertically.
 - `/warday validate` and `/warday scan` remain radius-limited and inspect only loaded claims belonging to configured teams. Markers outside the radius, in unloaded chunks, or in unclaimed chunks are not reported.

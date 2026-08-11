@@ -1,5 +1,7 @@
 {
   "itemGroup.fortifications": "Fortifications Mod",
+  "block.fortifications.fort_chest": "The FortChest",
+  "container.fortifications.fort_chest": "The FortChest",
   "block.fortifications.example_block": "Example Block",
   "item.fortifications.example_item": "Example Item",
   "attribute.name.fortifications.unarmed_damage": "Unarmed Damage",

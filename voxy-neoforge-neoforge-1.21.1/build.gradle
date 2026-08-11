@@ -71,16 +71,9 @@ repositories {
         }
     }
 
-    exclusiveContent {
-        forRepository {
-            maven {
-                name "caffeinemcRepository"
-                url "https://maven.caffeinemc.net/snapshots"
-            }
-        }
-        filter {
-            includeGroup "net.caffeinemc"
-        }
+    maven {
+        name "CaffeineMC"
+        url "https://maven.caffeinemc.net/releases"
     }
 
     // Forgified Fabric API for NeoForge
@@ -180,11 +173,11 @@ dependencies {
     // Forgified Fabric API for compatibility (includes Fabric Loader API)
     implementation "org.sinytra.forgified-fabric-api:forgified-fabric-api:${project.forgified_fabric_version}"
 
-    // Sodium for NeoForge (0.6.13 - latest for MC 1.21.1)
-    implementation "maven.modrinth:sodium:mc1.21.1-0.6.13-neoforge"
+    // Match the Sodium version installed in the NeoForge 21.1.238 pack.
+    implementation "net.caffeinemc:sodium-neoforge:${project.sodium_version}"
 
-    // Lithium for NeoForge (0.15.1 - latest for MC 1.21.1)
-    implementation("maven.modrinth:lithium:mc1.21.1-0.15.1-neoforge")
+    // Match the Lithium version installed in the NeoForge 21.1.238 pack.
+    implementation("maven.modrinth:lithium:${project.lithium_version}")
 
     // SodiumOptionsAPI for Video Settings integration
     // Provides event API to add custom pages to Sodium's options GUI
@@ -268,11 +261,11 @@ task validateMixins(type: Exec) {
     description = 'Validates that all mixins declared in JSON configs are present in the JAR'
     group = 'verification'
 
-    commandLine 'bash', 'scripts/validate_mixins.sh'
+    commandLine 'python3', 'scripts/validate_mixins.py'
 
     // Only run if script exists
     onlyIf {
-        file('scripts/validate_mixins.sh').exists()
+        file('scripts/validate_mixins.py').exists()
     }
 }
 

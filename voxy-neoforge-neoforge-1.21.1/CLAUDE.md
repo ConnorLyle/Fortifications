@@ -41,7 +41,7 @@ Before modifying any file:
 ### 3. Dependency Versions
 
 **Current validated versions** (for NeoForge 1.21.1):
-- NeoForge: 21.1.217
+- NeoForge: 21.1.238
 - Minecraft: 1.21.1
 - Sodium: mc1.21.1-0.6.13-neoforge
 - Lithium: mc1.21.1-0.15.1-neoforge
