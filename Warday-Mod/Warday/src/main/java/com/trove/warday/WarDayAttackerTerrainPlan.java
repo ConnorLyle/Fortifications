@@ -4,9 +4,34 @@ public final class WarDayAttackerTerrainPlan {
     private WarDayAttackerTerrainPlan() {
     }
 
-    public static int squareChunkCount(int radiusChunks) {
-        int diameter = Math.max(0, radiusChunks) * 2 + 1;
-        return diameter * diameter;
+    public static int edgeTargetOffset(int halfSizeBlocks, int marginBlocks) {
+        int halfSize = Math.max(1, halfSizeBlocks);
+        int margin = Math.min(Math.max(1, marginBlocks), Math.max(1, halfSize / 4));
+        return Math.max(0, halfSize - margin);
+    }
+
+    public static SourceWindow sourceWindow(
+            int sourceAnchorX,
+            int sourceAnchorZ,
+            int targetAnchorX,
+            int targetAnchorZ,
+            int halfSizeBlocks
+    ) {
+        int halfSize = Math.max(1, halfSizeBlocks);
+        int minSourceX = sourceAnchorX - halfSize - targetAnchorX;
+        int maxSourceX = sourceAnchorX + halfSize - 1 - targetAnchorX;
+        int minSourceZ = sourceAnchorZ - halfSize - targetAnchorZ;
+        int maxSourceZ = sourceAnchorZ + halfSize - 1 - targetAnchorZ;
+        return new SourceWindow(
+                Math.floorDiv(minSourceX, 16),
+                Math.floorDiv(maxSourceX, 16),
+                Math.floorDiv(minSourceZ, 16),
+                Math.floorDiv(maxSourceZ, 16),
+                minSourceX,
+                maxSourceX,
+                minSourceZ,
+                maxSourceZ
+        );
     }
 
     public static boolean insideArena(int targetX, int targetZ, int halfSizeBlocks) {
@@ -14,31 +39,26 @@ public final class WarDayAttackerTerrainPlan {
                 && targetZ >= -halfSizeBlocks && targetZ < halfSizeBlocks;
     }
 
-    public static int clippedColumnCount(
-            int spawnChunkX,
-            int spawnChunkZ,
-            int sourceAnchorX,
-            int sourceAnchorZ,
-            int targetAnchorX,
-            int targetAnchorZ,
-            int radiusChunks,
-            int halfSizeBlocks
+    public record SourceWindow(
+            int minChunkX,
+            int maxChunkX,
+            int minChunkZ,
+            int maxChunkZ,
+            int minSourceX,
+            int maxSourceX,
+            int minSourceZ,
+            int maxSourceZ
     ) {
-        int radius = Math.max(0, radiusChunks);
-        int columns = 0;
-        for (int chunkX = spawnChunkX - radius; chunkX <= spawnChunkX + radius; chunkX++) {
-            for (int chunkZ = spawnChunkZ - radius; chunkZ <= spawnChunkZ + radius; chunkZ++) {
-                for (int x = chunkX * 16; x < chunkX * 16 + 16; x++) {
-                    for (int z = chunkZ * 16; z < chunkZ * 16 + 16; z++) {
-                        int targetX = targetAnchorX + x - sourceAnchorX;
-                        int targetZ = targetAnchorZ + z - sourceAnchorZ;
-                        if (insideArena(targetX, targetZ, halfSizeBlocks)) {
-                            columns++;
-                        }
-                    }
-                }
-            }
+        public int chunkCount() {
+            return (maxChunkX - minChunkX + 1) * (maxChunkZ - minChunkZ + 1);
         }
-        return columns;
+
+        public int blockWidth() {
+            return maxSourceX - minSourceX + 1;
+        }
+
+        public int blockDepth() {
+            return maxSourceZ - minSourceZ + 1;
+        }
     }
 }

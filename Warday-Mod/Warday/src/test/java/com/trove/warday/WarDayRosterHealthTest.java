@@ -5,15 +5,15 @@ public final class WarDayRosterHealthTest {
     }
 
     public static void main(String[] args) {
-        expectOnline(20.0F, 20.0F, "10/10\u2665", WarDayRosterHealth.Band.HEALTHY);
-        expectOnline(19.0F, 20.0F, "9.5/10\u2665", WarDayRosterHealth.Band.HEALTHY);
-        expectOnline(15.0F, 20.0F, "7.5/10\u2665", WarDayRosterHealth.Band.HURT);
-        expectOnline(10.0F, 20.0F, "5/10\u2665", WarDayRosterHealth.Band.LOW);
-        expectOnline(5.0F, 20.0F, "2.5/10\u2665", WarDayRosterHealth.Band.CRITICAL);
-        expectOnline(0.0F, 20.0F, "0/10\u2665", WarDayRosterHealth.Band.EMPTY);
-        expectOnline(-5.0F, 20.0F, "0/10\u2665", WarDayRosterHealth.Band.EMPTY);
-        expectOnline(60.0F, 40.0F, "20/20\u2665", WarDayRosterHealth.Band.HEALTHY);
-        expectOnline(Float.NaN, Float.NaN, "0/0.5\u2665", WarDayRosterHealth.Band.EMPTY);
+        expectOnline(20.0F, 20.0F, "20/20", WarDayRosterHealth.Band.HEALTHY);
+        expectOnline(19.0F, 20.0F, "19/20", WarDayRosterHealth.Band.HEALTHY);
+        expectOnline(15.0F, 20.0F, "15/20", WarDayRosterHealth.Band.HURT);
+        expectOnline(10.0F, 20.0F, "10/20", WarDayRosterHealth.Band.LOW);
+        expectOnline(5.0F, 20.0F, "5/20", WarDayRosterHealth.Band.CRITICAL);
+        expectOnline(0.0F, 20.0F, "0/20", WarDayRosterHealth.Band.EMPTY);
+        expectOnline(-5.0F, 20.0F, "0/20", WarDayRosterHealth.Band.EMPTY);
+        expectOnline(60.0F, 40.0F, "40/40", WarDayRosterHealth.Band.HEALTHY);
+        expectOnline(Float.NaN, Float.NaN, "0/1", WarDayRosterHealth.Band.EMPTY);
 
         expectRespawning(1, "RESP 1s");
         expectRespawning(20, "RESP 1s");

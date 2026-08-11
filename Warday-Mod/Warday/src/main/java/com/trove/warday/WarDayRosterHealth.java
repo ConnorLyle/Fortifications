@@ -22,8 +22,7 @@ final class WarDayRosterHealth {
 
     static String displayText(Snapshot snapshot) {
         return switch (snapshot.status()) {
-            case ONLINE -> formatHearts(snapshot.healthPoints()) + "/"
-                    + formatHearts(snapshot.maxHealthPoints()) + "\u2665";
+            case ONLINE -> snapshot.healthPoints() + "/" + snapshot.maxHealthPoints();
             case RESPAWNING -> "RESP " + snapshot.respawnSeconds() + "s";
             case OFFLINE -> "OFF";
         };
@@ -58,11 +57,6 @@ final class WarDayRosterHealth {
             return fallback;
         }
         return Math.max(fallback, (int) Math.ceil(value));
-    }
-
-    private static String formatHearts(int healthPoints) {
-        int wholeHearts = healthPoints / 2;
-        return healthPoints % 2 == 0 ? Integer.toString(wholeHearts) : wholeHearts + ".5";
     }
 
     enum Status {

@@ -28,6 +28,7 @@ import net.minecraft.network.chat.numbers.BlankFormat;
 import net.minecraft.network.chat.numbers.FixedFormat;
 import net.minecraft.network.chat.numbers.NumberFormat;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.resources.ResourceKey;
@@ -81,6 +82,7 @@ import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
@@ -117,7 +119,9 @@ public class WarDayCommands {
     private static final String MATCH_ENTITY_MARKER = "warday_match_entity";
     private static final String MATCH_ENTITY_BATCH = "warday_match_entity_batch";
     private static final String PREPARED_DECORATIVE_MARKER = "warday_prepared_decorative";
-    private static final String WARDAY_ROSTER_OBJECTIVE = "warday_roster";
+    private static final String WARDAY_ROSTER_LEGACY_OBJECTIVE = "warday_roster";
+    private static final String WARDAY_DEFENDER_ROSTER_OBJECTIVE = "warday_roster_d";
+    private static final String WARDAY_ATTACKER_ROSTER_OBJECTIVE = "warday_roster_a";
     private static final ResourceLocation RAPID_BREAK_PENALTY_ID = ResourceLocation.fromNamespaceAndPath(WarDayMod.MODID, "rapid_break_penalty");
     private static final int ROSTER_PLAYERS_PER_TEAM_PAGE = 6;
     private static final long ROSTER_PAGE_TICKS = 100L;
@@ -126,6 +130,8 @@ public class WarDayCommands {
     private static final Map<UUID, Integer> DEATH_COUNTS = new HashMap<>();
     private static final Map<UUID, Deque<Long>> DIG_HISTORY = new HashMap<>();
     private static final Map<UUID, RapidBreakPenalty> RAPID_BREAK_PENALTIES = new HashMap<>();
+    private static final Map<UUID, Integer> RAPID_BREAK_STRIKES = new HashMap<>();
+    private static final Set<UUID> ROSTER_OBJECTIVES_KNOWN = new HashSet<>();
     private static ServerBossEvent matchTimerBossBar;
     private static MinecraftServer matchTimerBossBarServer;
     private static long lastBossBarSeconds = Long.MIN_VALUE;
@@ -317,7 +323,8 @@ public class WarDayCommands {
         ResolvedBases bases = resolved.get();
         source.sendSuccess(() -> message(ChatFormatting.AQUA, "War Day prepare preview only. No blocks were copied."), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY, "Target dimension: " + WarDayConfig.WAR_DAY_DIMENSION.get()), false);
-        source.sendSuccess(() -> message(ChatFormatting.GRAY, "Defender nexus targets [0, warDayBaseY, 0]; attacker spawn targets [baseSpacingBlocks, warDayBaseY, 0]."), false);
+        source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                "Defender nexus targets arena center; attacker spawn targets the eastern arena edge inside the copied terrain."), false);
 
         reportPlacementPlan(source, PlacementPlan.from(bases.teamA()));
         bases.attackerArea().ifPresent(area -> reportPlacementPlan(source, PlacementPlan.from(area)));
@@ -798,6 +805,31 @@ public class WarDayCommands {
             }
             clearRapidBreakPenalty(player, player.serverLevel().getGameTime());
             DIG_HISTORY.remove(player.getUUID());
+            ROSTER_OBJECTIVES_KNOWN.remove(player.getUUID());
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void onLivingIncomingDamage(LivingIncomingDamageEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer victim)
+                || !(event.getSource().getEntity() instanceof ServerPlayer attacker)) {
+            return;
+        }
+
+        WarDayState state = WarDayState.get(victim.getServer());
+        if (!state.isCombatActive()
+                || !victim.level().dimension().location().toString().equals(state.warDayDimension())
+                || !attacker.level().dimension().location().toString().equals(state.warDayDimension())) {
+            return;
+        }
+
+        if (WarDayFriendlyFire.areTeammates(
+                attacker.getUUID(),
+                victim.getUUID(),
+                state.defenderParticipants(),
+                state.attackerParticipants()
+        )) {
+            event.setCanceled(true);
         }
     }
 
@@ -1287,10 +1319,16 @@ public class WarDayCommands {
 
     private static String currentSidebarObjectiveName(MinecraftServer server) {
         Objective current = server.getScoreboard().getDisplayObjective(DisplaySlot.SIDEBAR);
-        if (current == null || WARDAY_ROSTER_OBJECTIVE.equals(current.getName())) {
+        if (current == null || isWarDayRosterObjective(current.getName())) {
             return "";
         }
         return current.getName();
+    }
+
+    private static boolean isWarDayRosterObjective(String name) {
+        return WARDAY_ROSTER_LEGACY_OBJECTIVE.equals(name)
+                || WARDAY_DEFENDER_ROSTER_OBJECTIVE.equals(name)
+                || WARDAY_ATTACKER_ROSTER_OBJECTIVE.equals(name);
     }
 
     private static void syncWarDaySidebar(
@@ -1311,51 +1349,135 @@ public class WarDayCommands {
         ));
         int page = Math.floorMod(gameTime / ROSTER_PAGE_TICKS, pageCount);
         String signature = rosterSignature(state, defenders, attackers, page, pageCount);
-
         ServerScoreboard scoreboard = server.getScoreboard();
-        Objective objective = scoreboard.getObjective(WARDAY_ROSTER_OBJECTIVE);
         Objective displayed = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
-        if (displayed != null && !WARDAY_ROSTER_OBJECTIVE.equals(displayed.getName())) {
+        if (displayed != null && !isWarDayRosterObjective(displayed.getName())) {
             state.setPreviousSidebarObjective(displayed.getName());
         }
+
+        Objective legacy = scoreboard.getObjective(WARDAY_ROSTER_LEGACY_OBJECTIVE);
+        if (legacy != null) {
+            if (displayed == legacy) {
+                Objective previous = state.previousSidebarObjective().isBlank()
+                        ? null
+                        : scoreboard.getObjective(state.previousSidebarObjective());
+                scoreboard.setDisplayObjective(DisplaySlot.SIDEBAR, previous);
+            }
+            scoreboard.removeObjective(legacy);
+        }
+
+        Objective defenderObjective = scoreboard.getObjective(WARDAY_DEFENDER_ROSTER_OBJECTIVE);
+        Objective attackerObjective = scoreboard.getObjective(WARDAY_ATTACKER_ROSTER_OBJECTIVE);
         boolean wrongServer = rosterScoreboardServer != server;
-        boolean notDisplayed = displayed != objective;
-        boolean objectiveMissing = objective == null;
-        if (!force && !wrongServer && !notDisplayed && !objectiveMissing && signature.equals(lastRosterSignature)) {
-            return;
+        boolean defenderMissing = defenderObjective == null;
+        boolean attackerMissing = attackerObjective == null;
+        if (defenderMissing) {
+            defenderObjective = addRosterObjective(scoreboard, WARDAY_DEFENDER_ROSTER_OBJECTIVE);
+        }
+        if (attackerMissing) {
+            attackerObjective = addRosterObjective(scoreboard, WARDAY_ATTACKER_ROSTER_OBJECTIVE);
+        }
+        boolean startedTracking = false;
+        if (wrongServer || defenderMissing) {
+            scoreboard.startTrackingObjective(defenderObjective);
+            startedTracking = true;
+        }
+        if (wrongServer || attackerMissing) {
+            scoreboard.startTrackingObjective(attackerObjective);
+            startedTracking = true;
+        }
+        if (startedTracking) {
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                ROSTER_OBJECTIVES_KNOWN.add(player.getUUID());
+            }
         }
 
-        if (objective == null) {
-            objective = scoreboard.addObjective(
-                    WARDAY_ROSTER_OBJECTIVE,
-                    ObjectiveCriteria.DUMMY,
-                    message(ChatFormatting.GOLD, "War Day Teams"),
-                    ObjectiveCriteria.RenderType.INTEGER,
-                    false,
-                    BlankFormat.INSTANCE
-            );
-        }
-        objective.setDisplayName(message(ChatFormatting.GOLD,
-                pageCount > 1 ? "War Day Teams " + (page + 1) + "/" + pageCount : "War Day Teams"));
+        if (force || wrongServer || defenderMissing || attackerMissing || !signature.equals(lastRosterSignature)) {
+            net.minecraft.network.chat.Component title = message(ChatFormatting.GOLD,
+                    pageCount > 1 ? "War Day Teams " + (page + 1) + "/" + pageCount : "War Day Teams");
+            defenderObjective.setDisplayName(title);
+            attackerObjective.setDisplayName(title);
 
+            List<RosterLine> defenderLines = rosterLines(
+                    state, defenders, attackers, page, true);
+            List<RosterLine> attackerLines = rosterLines(
+                    state, defenders, attackers, page, false);
+            updateRosterObjective(scoreboard, defenderObjective, defenderLines);
+            updateRosterObjective(scoreboard, attackerObjective, attackerLines);
+            lastRosterSignature = signature;
+        }
+
+        sendRosterViews(server, state, defenderObjective, attackerObjective);
+        rosterScoreboardServer = server;
+    }
+
+    private static Objective addRosterObjective(ServerScoreboard scoreboard, String name) {
+        return scoreboard.addObjective(
+                name,
+                ObjectiveCriteria.DUMMY,
+                message(ChatFormatting.GOLD, "War Day Teams"),
+                ObjectiveCriteria.RenderType.INTEGER,
+                false,
+                BlankFormat.INSTANCE
+        );
+    }
+
+    private static List<RosterLine> rosterLines(
+            WarDayState state,
+            List<RosterPlayer> defenders,
+            List<RosterPlayer> attackers,
+            int page,
+            boolean defenderView
+    ) {
         List<RosterLine> lines = new ArrayList<>();
-        addRosterTeamLines(lines, state.defenderTeam(), defenders, page, ChatFormatting.AQUA);
-        addRosterTeamLines(lines, state.attackerTeam(), attackers, page, ChatFormatting.RED);
+        addRosterTeamLines(lines, state.defenderTeam(), defenders, page, ChatFormatting.AQUA, defenderView);
+        addRosterTeamLines(lines, state.attackerTeam(), attackers, page, ChatFormatting.RED, !defenderView);
+        return lines;
+    }
+
+    private static void updateRosterObjective(
+            ServerScoreboard scoreboard,
+            Objective objective,
+            List<RosterLine> lines
+    ) {
         removeUnexpectedRosterScores(scoreboard, objective, lines.size());
         for (int index = 0; index < lines.size(); index++) {
             RosterLine line = lines.get(index);
             ScoreAccess score = scoreboard.getOrCreatePlayerScore(
-                    ScoreHolder.forNameOnly("wd_line_" + index),
-                    objective
-            );
+                    ScoreHolder.forNameOnly("wd_line_" + index), objective);
             score.display(line.display());
             score.numberFormatOverride(line.numberFormat());
             score.set(15 - index);
         }
+    }
 
-        scoreboard.setDisplayObjective(DisplaySlot.SIDEBAR, objective);
-        rosterScoreboardServer = server;
-        lastRosterSignature = signature;
+    private static void sendRosterViews(
+            MinecraftServer server,
+            WarDayState state,
+            Objective defenderObjective,
+            Objective attackerObjective
+    ) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (ROSTER_OBJECTIVES_KNOWN.add(player.getUUID())) {
+                for (net.minecraft.network.protocol.Packet<?> packet
+                        : server.getScoreboard().getStartTrackingPackets(defenderObjective)) {
+                    player.connection.send(packet);
+                }
+                for (net.minecraft.network.protocol.Packet<?> packet
+                        : server.getScoreboard().getStartTrackingPackets(attackerObjective)) {
+                    player.connection.send(packet);
+                }
+            }
+            Objective view = null;
+            if (state.isDefenderParticipant(player.getUUID())) {
+                view = defenderObjective;
+            } else if (state.isAttackerParticipant(player.getUUID())) {
+                view = attackerObjective;
+            }
+            if (view != null) {
+                player.connection.send(new ClientboundSetDisplayObjectivePacket(DisplaySlot.SIDEBAR, view));
+            }
+        }
     }
 
     private static List<RosterPlayer> rosterPlayers(
@@ -1407,7 +1529,8 @@ public class WarDayCommands {
             String teamName,
             List<RosterPlayer> players,
             int page,
-            ChatFormatting color
+            ChatFormatting color,
+            boolean showStatus
     ) {
         String displayTeamName = teamName == null || teamName.isBlank() ? "Unconfigured team" : teamName;
         lines.add(new RosterLine(
@@ -1426,7 +1549,9 @@ public class WarDayCommands {
         for (RosterPlayer player : players.subList(fromIndex, toIndex)) {
             lines.add(new RosterLine(
                     message(color, "  " + player.name()),
-                    new FixedFormat(message(rosterHealthColor(player.health()), WarDayRosterHealth.displayText(player.health())))
+                    showStatus
+                            ? new FixedFormat(message(rosterHealthColor(player.health()), WarDayRosterHealth.displayText(player.health())))
+                            : BlankFormat.INSTANCE
             ));
         }
     }
@@ -1466,18 +1591,29 @@ public class WarDayCommands {
 
     private static void restoreWarDaySidebar(MinecraftServer server, WarDayState state) {
         ServerScoreboard scoreboard = server.getScoreboard();
-        Objective wardayObjective = scoreboard.getObjective(WARDAY_ROSTER_OBJECTIVE);
         Objective current = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
-        if (current == wardayObjective) {
+        if (current != null && isWarDayRosterObjective(current.getName())) {
             String previousName = state.previousSidebarObjective();
             Objective previous = previousName.isBlank() ? null : scoreboard.getObjective(previousName);
             scoreboard.setDisplayObjective(DisplaySlot.SIDEBAR, previous);
         }
-        if (wardayObjective != null) {
-            scoreboard.removeObjective(wardayObjective);
+        Objective restored = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            player.connection.send(new ClientboundSetDisplayObjectivePacket(DisplaySlot.SIDEBAR, restored));
+        }
+        for (String objectiveName : List.of(
+                WARDAY_ROSTER_LEGACY_OBJECTIVE,
+                WARDAY_DEFENDER_ROSTER_OBJECTIVE,
+                WARDAY_ATTACKER_ROSTER_OBJECTIVE
+        )) {
+            Objective objective = scoreboard.getObjective(objectiveName);
+            if (objective != null) {
+                scoreboard.removeObjective(objective);
+            }
         }
         rosterScoreboardServer = null;
         lastRosterSignature = "";
+        ROSTER_OBJECTIVES_KNOWN.clear();
     }
 
     private static int endActiveWarDay(MinecraftServer server, WarDayState state) {
@@ -2013,7 +2149,11 @@ public class WarDayCommands {
         }
 
         int durationTicks = WarDayConfig.DIG_PENALTY_SECONDS.getAsInt() * 20;
-        int penaltyPercent = WarDayConfig.DIG_PENALTY_PERCENT.getAsInt();
+        int strike = RAPID_BREAK_STRIKES.merge(player.getUUID(), 1, Integer::sum);
+        int penaltyPercent = WarDayRapidBreakRule.cumulativePenaltyPercent(
+                strike,
+                WarDayConfig.DIG_PENALTY_PERCENT.getAsInt()
+        );
         AttributeInstance blockBreakSpeed = player.getAttribute(Attributes.BLOCK_BREAK_SPEED);
         if (blockBreakSpeed != null) {
             blockBreakSpeed.addOrUpdateTransientModifier(new AttributeModifier(
@@ -2034,7 +2174,8 @@ public class WarDayCommands {
         );
         player.addEffect(new MobEffectInstance(MobEffects.GLOWING, durationTicks, 0, false, true, true));
         player.displayClientMessage(message(ChatFormatting.YELLOW,
-                "Rapid-breaking penalty: -" + penaltyPercent + "% block-breaking speed and Glowing for "
+                "Rapid-breaking strike " + Math.min(strike, 4) + ": -" + penaltyPercent
+                        + "% block-breaking speed and Glowing for "
                         + WarDayConfig.DIG_PENALTY_SECONDS.getAsInt() + " seconds ("
                         + result.recentBreaks() + " breaks in " + WarDayConfig.DIG_LIMIT_WINDOW_SECONDS.getAsInt()
                         + " seconds)."), false);
@@ -2108,6 +2249,7 @@ public class WarDayCommands {
             }
         }
         RAPID_BREAK_PENALTIES.clear();
+        RAPID_BREAK_STRIKES.clear();
     }
 
     private static void removeRapidBreakModifier(ServerPlayer player) {
@@ -2684,8 +2826,8 @@ public class WarDayCommands {
         ChatFormatting color = passed ? ChatFormatting.GREEN : ChatFormatting.RED;
         source.sendSuccess(() -> message(color,
                 attackerArea.team().getName().getString()
-                        + " terrain guardrail: radius " + WarDayConfig.ATTACKER_TERRAIN_RADIUS_CHUNKS.getAsInt()
-                        + " chunks, selected " + attackerArea.cluster().size() + "/" + maxChunks + " chunks"), false);
+                        + " terrain guardrail: exact arena coverage uses " + attackerArea.cluster().size()
+                        + "/" + maxChunks + " source chunks"), false);
         return passed;
     }
 
@@ -2698,9 +2840,20 @@ public class WarDayCommands {
                         + plan.bounds().maxX() + ", " + plan.bounds().maxZ() + "]"), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "- target anchor: " + formatPos(plan.targetAnchorPos())), false);
-        source.sendSuccess(() -> message(ChatFormatting.GRAY,
-                "- target footprint: [" + plan.targetMinX() + ", " + plan.targetMinZ() + "] to ["
-                        + plan.targetMaxX() + ", " + plan.targetMaxZ() + "]"), false);
+        if (plan.baseArea().isEmpty()) {
+            int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+            source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                    "- terrain coverage: complete " + (halfSize * 2) + "x" + (halfSize * 2)
+                            + " arena from [" + -halfSize + ", " + -halfSize + "] to ["
+                            + (halfSize - 1) + ", " + (halfSize - 1) + "]"), false);
+            source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                    "- attacker spawn: eastern edge at x=" + plan.targetAnchorPos().getX()
+                            + ", safely inside the copied terrain"), false);
+        } else {
+            source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                    "- target footprint: [" + plan.targetMinX() + ", " + plan.targetMinZ() + "] to ["
+                            + plan.targetMaxX() + ", " + plan.targetMaxZ() + "]"), false);
+        }
         int totalColumns = plan.cluster().size() * 256;
         int copyableColumns = plan.copyableColumnCount();
         source.sendSuccess(() -> message(copyableColumns == totalColumns ? ChatFormatting.GRAY : ChatFormatting.YELLOW,
@@ -3475,15 +3628,18 @@ public class WarDayCommands {
     ) {
         private static AttackerArea from(AttackerValidation validation) {
             AttackerSpawn spawn = validation.spawn();
-            Set<ChunkDimPos> cluster = attackerTerrainCluster(spawn, WarDayConfig.ATTACKER_TERRAIN_RADIUS_CHUNKS.getAsInt());
+            Set<ChunkDimPos> cluster = attackerTerrainCluster(spawn);
             return new AttackerArea(validation.team(), spawn, cluster, ClusterBounds.from(cluster), spawn.dimension());
         }
 
-        private static Set<ChunkDimPos> attackerTerrainCluster(AttackerSpawn spawn, int radiusChunks) {
-            ChunkDimPos spawnChunk = spawn.chunkDimPos();
+        private static Set<ChunkDimPos> attackerTerrainCluster(AttackerSpawn spawn) {
+            int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+            int targetX = WarDayAttackerTerrainPlan.edgeTargetOffset(halfSize, MATCH_BORDER_SPAWN_MARGIN);
+            WarDayAttackerTerrainPlan.SourceWindow window = WarDayAttackerTerrainPlan.sourceWindow(
+                    spawn.pos().getX(), spawn.pos().getZ(), targetX, 0, halfSize);
             Set<ChunkDimPos> cluster = new HashSet<>();
-            for (int chunkX = spawnChunk.x() - radiusChunks; chunkX <= spawnChunk.x() + radiusChunks; chunkX++) {
-                for (int chunkZ = spawnChunk.z() - radiusChunks; chunkZ <= spawnChunk.z() + radiusChunks; chunkZ++) {
+            for (int chunkX = window.minChunkX(); chunkX <= window.maxChunkX(); chunkX++) {
+                for (int chunkZ = window.minChunkZ(); chunkZ <= window.maxChunkZ(); chunkZ++) {
                     cluster.add(new ChunkDimPos(spawn.dimension(), new ChunkPos(chunkX, chunkZ)));
                 }
             }
@@ -3535,9 +3691,7 @@ public class WarDayCommands {
 
         private static int attackerTargetOffset() {
             int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
-            int margin = Math.min(MATCH_BORDER_SPAWN_MARGIN, Math.max(1, halfSize / 4));
-            int maximumSafeOffset = Math.max(1, halfSize - margin);
-            return Math.min(WarDayConfig.BASE_SPACING_BLOCKS.getAsInt(), maximumSafeOffset);
+            return WarDayAttackerTerrainPlan.edgeTargetOffset(halfSize, MATCH_BORDER_SPAWN_MARGIN);
         }
 
         private int targetMinX() {

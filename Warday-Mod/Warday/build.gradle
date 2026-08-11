@@ -226,8 +226,14 @@ var rapidBreakRuleTest = tasks.register('rapidBreakRuleTest', JavaExec) {
     mainClass = 'com.trove.warday.WarDayRapidBreakRuleTest'
 }
 
+var friendlyFireTest = tasks.register('friendlyFireTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayFriendlyFireTest'
+}
+
 tasks.named('check') {
-    dependsOn rosterHealthTest, spectatorCycleTest, attackerTerrainPlanTest, journeyMapPrivacyTest, rapidBreakRuleTest
+    dependsOn rosterHealthTest, spectatorCycleTest, attackerTerrainPlanTest, journeyMapPrivacyTest, rapidBreakRuleTest, friendlyFireTest
 }
 
 tasks.named('test', Test) {

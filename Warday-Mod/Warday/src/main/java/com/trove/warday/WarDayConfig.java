@@ -37,7 +37,7 @@ public final class WarDayConfig {
                 .comment("Display/config name for the second War Day team.")
                 .define("teamBName", "Team B");
         BASE_SPACING_BLOCKS = builder
-                .comment("Preferred distance from the defender nexus to the attacker spawn; automatically limited to fit inside the match border.")
+                .comment("Legacy attacker-spacing setting retained for config compatibility. Attacker placement now uses the arena edge.")
                 .defineInRange("baseSpacingBlocks", 100, 16, 10000);
         VALIDATION_RADIUS_BLOCKS = builder
                 .comment("Temporary scan radius around the admin running /warday validate until FTB claim scanning is wired.")
@@ -58,10 +58,10 @@ public final class WarDayConfig {
                 .comment("Preview target Y level for copied base origins during /warday prepare.")
                 .defineInRange("warDayBaseY", 80, -64, 320);
         ATTACKER_TERRAIN_RADIUS_CHUNKS = builder
-                .comment("Square chunk radius copied around the attacker spawn marker. 8 copies a 17x17 chunk terrain window before the defender base is overlaid.")
+                .comment("Legacy terrain-radius setting retained for config compatibility. Prepare now derives exact source chunks for full arena coverage.")
                 .defineInRange("attackerTerrainRadiusChunks", 8, 0, 12);
         MAX_ATTACKER_TERRAIN_CHUNKS = builder
-                .comment("Safety limit for the attacker terrain copy. Increase deliberately before using a radius larger than 8 chunks.")
+                .comment("Safety limit for the exact attacker-terrain source window. The default 250x250 arena needs at most 289 chunks.")
                 .defineInRange("maxAttackerTerrainChunks", 289, 1, 625);
         MAX_PREPARED_ENTITIES = builder
                 .comment("Maximum persistent non-player entities captured from both copied areas and recreated for each match. Set to 0 to disable entity templates.")
@@ -97,7 +97,7 @@ public final class WarDayConfig {
                 .comment("Seconds of glowing and mining slowdown applied when a player exceeds the dig limit.")
                 .defineInRange("digPenaltySeconds", 60, 1, 600);
         DIG_PENALTY_PERCENT = builder
-                .comment("Percentage removed from block-breaking speed while the rapid-breaking penalty is active.")
+                .comment("First rapid-breaking strike percentage. Later strikes add 20, 10, then 5 percentage points and cap at that fourth tier.")
                 .defineInRange("digPenaltyPercent", 25, 1, 100);
         builder.pop();
 

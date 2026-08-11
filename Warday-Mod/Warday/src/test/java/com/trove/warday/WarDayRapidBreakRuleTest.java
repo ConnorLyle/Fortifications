@@ -29,6 +29,12 @@ public final class WarDayRapidBreakRuleTest {
         expect(-0.25D, WarDayRapidBreakRule.blockBreakSpeedModifier(25), "default penalty");
         expect(-1.0D, WarDayRapidBreakRule.blockBreakSpeedModifier(150), "upper clamp");
         expect(0.0D, WarDayRapidBreakRule.blockBreakSpeedModifier(-1), "lower clamp");
+
+        expect(25, WarDayRapidBreakRule.cumulativePenaltyPercent(1, 25), "first strike");
+        expect(45, WarDayRapidBreakRule.cumulativePenaltyPercent(2, 25), "second strike");
+        expect(55, WarDayRapidBreakRule.cumulativePenaltyPercent(3, 25), "third strike");
+        expect(60, WarDayRapidBreakRule.cumulativePenaltyPercent(4, 25), "fourth strike");
+        expect(60, WarDayRapidBreakRule.cumulativePenaltyPercent(20, 25), "later strikes capped at tier four");
     }
 
     private static void expect(Object expected, Object actual, String label) {

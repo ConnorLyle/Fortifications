@@ -2,6 +2,7 @@ package com.trove.warday;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.UUID;
 
 public final class WarDaySpectatorCycleTest {
@@ -27,6 +28,11 @@ public final class WarDaySpectatorCycleTest {
         expect(Optional.of(CHARLIE), WarDaySpectatorCycle.select(candidates, MISSING, -1), "missing backward");
         expect(Optional.of(ALPHA), WarDaySpectatorCycle.select(List.of(ALPHA), ALPHA, 1), "single forward");
         expect(Optional.of(ALPHA), WarDaySpectatorCycle.select(List.of(ALPHA), ALPHA, -1), "single backward");
+
+        expect(OptionalInt.of(-1), WarDaySpectatorInput.cycleDirection(0, 1), "left mouse press");
+        expect(OptionalInt.of(1), WarDaySpectatorInput.cycleDirection(1, 1), "right mouse press");
+        expect(OptionalInt.empty(), WarDaySpectatorInput.cycleDirection(0, 0), "left mouse release ignored");
+        expect(OptionalInt.empty(), WarDaySpectatorInput.cycleDirection(2, 1), "middle mouse ignored");
     }
 
     private static void expect(Object expected, Object actual, String label) {

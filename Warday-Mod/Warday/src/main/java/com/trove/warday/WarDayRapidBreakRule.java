@@ -28,6 +28,21 @@ public final class WarDayRapidBreakRule {
         return -clampedPercent / 100.0D;
     }
 
+    public static int cumulativePenaltyPercent(int strike, int firstPenaltyPercent) {
+        int safeStrike = Math.max(1, strike);
+        int penalty = firstPenaltyPercent;
+        if (safeStrike >= 2) {
+            penalty += 20;
+        }
+        if (safeStrike >= 3) {
+            penalty += 10;
+        }
+        if (safeStrike >= 4) {
+            penalty += 5;
+        }
+        return Math.clamp(penalty, 0, 100);
+    }
+
     public record TrackResult(boolean triggered, int recentBreaks) {
     }
 }
