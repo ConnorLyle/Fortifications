@@ -1,8 +1,9 @@
 package com.trove.warday;
 
-import java.util.OptionalInt;
+import java.util.Optional;
 
 public final class WarDayAttackerTerrainPlan {
+    // Pure placement math shared by preview, preparation, and focused verification.
     private WarDayAttackerTerrainPlan() {
     }
 
@@ -12,19 +13,63 @@ public final class WarDayAttackerTerrainPlan {
         return Math.max(0, halfSize - margin);
     }
 
-    public static OptionalInt automaticSpawnX(
-            int defenderClaimMaxX,
+    public static Optional<CornerLayout> cornerLayout(
+            int relativeMinX,
+            int relativeMaxX,
+            int relativeMinZ,
+            int relativeMaxZ,
             int halfSizeBlocks,
-            int desiredGapBlocks,
-            int borderMarginBlocks
+            int desiredMarginBlocks
     ) {
-        int maximumSafeX = edgeTargetOffset(halfSizeBlocks, borderMarginBlocks);
-        int firstOutsideClaim = defenderClaimMaxX + 1;
-        if (firstOutsideClaim > maximumSafeX) {
-            return OptionalInt.empty();
+        int halfSize = Math.max(1, halfSizeBlocks);
+        int arenaSize = halfSize * 2;
+        int width = relativeMaxX - relativeMinX + 1;
+        int depth = relativeMaxZ - relativeMinZ + 1;
+        if (width <= 0 || depth <= 0 || width > arenaSize - 2 || depth > arenaSize - 2) {
+            return Optional.empty();
         }
-        int preferredX = defenderClaimMaxX + Math.max(1, desiredGapBlocks);
-        return OptionalInt.of(Math.min(preferredX, maximumSafeX));
+
+        int maximumMargin = Math.min((arenaSize - width) / 2, (arenaSize - depth) / 2);
+        int margin = Math.max(1, Math.min(Math.max(1, desiredMarginBlocks), maximumMargin));
+        int edge = halfSize - margin;
+        int spawnEdge = edgeTargetOffset(halfSize, desiredMarginBlocks);
+        int defenderAnchorX = edge - relativeMaxX;
+        int defenderAnchorZ = -edge - relativeMinZ;
+        return Optional.of(new CornerLayout(
+                defenderAnchorX,
+                defenderAnchorZ,
+                -spawnEdge,
+                spawnEdge,
+                margin
+        ));
+    }
+
+    public static SourceAnchor generatedTerrainAnchor(int nexusX, int nexusZ) {
+        return generatedTerrainAnchor(nexusX, nexusZ, 0L, 0);
+    }
+
+    public static SourceAnchor generatedTerrainAnchor(
+            int nexusX,
+            int nexusZ,
+            long generationSequence,
+            int searchAttempt
+    ) {
+        long mixed = mix64((((long) nexusX) << 32)
+                ^ Integer.toUnsignedLong(nexusZ)
+                ^ mix64(generationSequence)
+                ^ mix64(searchAttempt)
+                ^ 0x574152444159L);
+        int chunkX = 100_000 + (int) Math.floorMod(mixed, 500_000L);
+        int chunkZ = -100_000 - (int) Math.floorMod(mix64(mixed), 500_000L);
+        return new SourceAnchor(chunkX * 16 + 8, chunkZ * 16 + 8);
+    }
+
+    private static long mix64(long value) {
+        value ^= value >>> 33;
+        value *= 0xff51afd7ed558ccdl;
+        value ^= value >>> 33;
+        value *= 0xc4ceb9fe1a85ec53l;
+        return value ^ value >>> 33;
     }
 
     public static SourceWindow sourceWindow(
@@ -126,5 +171,17 @@ public final class WarDayAttackerTerrainPlan {
         public int blockDepth() {
             return maxSourceZ - minSourceZ + 1;
         }
+    }
+
+    public record CornerLayout(
+            int defenderAnchorX,
+            int defenderAnchorZ,
+            int attackerSpawnX,
+            int attackerSpawnZ,
+            int marginBlocks
+    ) {
+    }
+
+    public record SourceAnchor(int x, int z) {
     }
 }

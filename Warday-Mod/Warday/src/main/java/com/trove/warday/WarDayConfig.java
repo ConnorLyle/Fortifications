@@ -13,6 +13,8 @@ public final class WarDayConfig {
     public static final ModConfigSpec.IntValue WAR_DAY_BASE_Y;
     public static final ModConfigSpec.IntValue ATTACKER_TERRAIN_RADIUS_CHUNKS;
     public static final ModConfigSpec.IntValue MAX_ATTACKER_TERRAIN_CHUNKS;
+    public static final ModConfigSpec.IntValue BIOME_TERRAIN_SEARCH_RADIUS_BLOCKS;
+    public static final ModConfigSpec.IntValue BIOME_TERRAIN_SEARCH_ATTEMPTS;
     public static final ModConfigSpec.IntValue MAX_PREPARED_ENTITIES;
     public static final ModConfigSpec.IntValue RESPAWN_DELAY_SECONDS;
     public static final ModConfigSpec.IntValue MATCH_DURATION_SECONDS;
@@ -37,7 +39,7 @@ public final class WarDayConfig {
                 .comment("Display/config name for the second War Day team.")
                 .define("teamBName", "Team B");
         BASE_SPACING_BLOCKS = builder
-                .comment("Legacy attacker-spacing setting retained for config compatibility. Attacker placement now uses the arena edge.")
+                .comment("Legacy attacker-spacing setting retained for config compatibility. Attacker placement now uses the corner opposite the defender.")
                 .defineInRange("baseSpacingBlocks", 100, 16, 10000);
         VALIDATION_RADIUS_BLOCKS = builder
                 .comment("Temporary scan radius around the admin running /warday validate until FTB claim scanning is wired.")
@@ -55,14 +57,20 @@ public final class WarDayConfig {
                 .comment("Target dimension id for the future War Day instance dimension.")
                 .define("warDayDimension", "warday:war_day");
         WAR_DAY_BASE_Y = builder
-                .comment("Preview target Y level for copied base origins during /warday prepare.")
+                .comment("Target Y level for the copied defender nexus and generated-terrain source anchor during /warday prepare.")
                 .defineInRange("warDayBaseY", 80, -64, 320);
         ATTACKER_TERRAIN_RADIUS_CHUNKS = builder
-                .comment("Legacy terrain-radius setting retained for config compatibility. Prepare now derives exact source chunks for full arena coverage.")
+                .comment("Legacy terrain-radius setting retained for config compatibility. Prepare now derives an exact remote biome-matched source window.")
                 .defineInRange("attackerTerrainRadiusChunks", 8, 0, 12);
         MAX_ATTACKER_TERRAIN_CHUNKS = builder
-                .comment("Safety limit for the exact attacker-terrain source window. The default 250x250 arena needs at most 289 chunks.")
+                .comment("Safety limit for the biome-matched generated-terrain source window. The default 250x250 arena needs at most 289 chunks.")
                 .defineInRange("maxAttackerTerrainChunks", 289, 1, 625);
+        BIOME_TERRAIN_SEARCH_RADIUS_BLOCKS = builder
+                .comment("Maximum radius searched around each remote candidate for terrain matching the defender nexus biome.")
+                .defineInRange("biomeTerrainSearchRadiusBlocks", 8192, 512, 65536);
+        BIOME_TERRAIN_SEARCH_ATTEMPTS = builder
+                .comment("Number of deterministic remote regions checked for a continuous arena-sized match to the defender nexus biome.")
+                .defineInRange("biomeTerrainSearchAttempts", 24, 1, 128);
         MAX_PREPARED_ENTITIES = builder
                 .comment("Maximum persistent non-player entities captured from both copied areas and recreated for each match. Set to 0 to disable entity templates.")
                 .defineInRange("maxPreparedEntities", 256, 0, 4096);
@@ -79,7 +87,7 @@ public final class WarDayConfig {
                 .comment("Seconds to celebrate the winning team after combat ends before restoring players. Set to 0 to skip the delay.")
                 .defineInRange("victoryFanfareSeconds", 30, 0, 300);
         MAP_HALF_SIZE_BLOCKS = builder
-                .comment("Half-size of the square match bounds centered on the defending nexus. 125 gives a 250x250 map.")
+                .comment("Half-size of the square match bounds centered at the War Day arena origin. 125 gives a 250x250 map.")
                 .defineInRange("mapHalfSizeBlocks", 125, 16, 2048);
         DEFENDER_MATCH_BLOCK = builder
                 .comment("Only placeable block for defender-team participants during War Day.")

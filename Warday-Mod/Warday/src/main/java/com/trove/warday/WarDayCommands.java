@@ -18,6 +18,8 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
+import net.minecraft.core.QuartPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -28,6 +30,7 @@ import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.numbers.BlankFormat;
 import net.minecraft.network.chat.numbers.FixedFormat;
 import net.minecraft.network.chat.numbers.NumberFormat;
+import net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
@@ -41,6 +44,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.Container;
 import net.minecraft.world.BossEvent;
 import net.minecraft.world.InteractionResult;
@@ -65,6 +69,8 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -72,6 +78,7 @@ import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Objective;
@@ -106,7 +113,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
@@ -277,7 +283,7 @@ public class WarDayCommands {
         if (teamAValidation.passed()) {
             source.sendSuccess(() -> message(ChatFormatting.GREEN,
                     context.teamB().isPresent()
-                            ? "Validation passed: defender base is configured; attacker terrain and spawn will be generated automatically."
+                            ? "Validation passed: defender base is configured; battlefield terrain and the opposite-corner attacker spawn will be generated automatically."
                             : "Validation passed in one-team testing mode."), true);
             return 1;
         }
@@ -312,7 +318,7 @@ public class WarDayCommands {
         }
 
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Scan complete: defender base resolved; surrounding terrain and attacker spawn will be automatic."), false);
+                "Scan complete: defender base resolved; generated battlefield terrain and the opposite-corner attacker spawn will be automatic."), false);
         return 1;
     }
 
@@ -326,13 +332,16 @@ public class WarDayCommands {
         source.sendSuccess(() -> message(ChatFormatting.AQUA, "War Day prepare preview only. No blocks were copied."), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY, "Target dimension: " + WarDayConfig.WAR_DAY_DIMENSION.get()), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
-                "Defender nexus targets arena center; attacker spawn is generated beyond the defender claim in the forward-marker direction."), false);
+                "Generated terrain fills the arena; the defender base occupies one corner and the attacker spawns in the diagonal opposite corner."), false);
+        source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                "Fresh terrain generation " + (bases.attackerArea().generationSequence() + 1)
+                        + " will use a continuous " + biomeName(bases.attackerArea().biome()) + " source area."), false);
 
         reportPlacementPlan(source, PlacementPlan.from(bases.teamA()));
         reportPlacementPlan(source, PlacementPlan.from(bases.attackerArea()));
 
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                "Run /warday prepare confirm to copy these source chunks into the target placements."), false);
+                "Run /warday prepare confirm to generate the battlefield and copy the defender base into its corner."), false);
         return 1;
     }
 
@@ -366,6 +375,7 @@ public class WarDayCommands {
             source.sendFailure(message(ChatFormatting.RED, "Defender source dimension is not loaded: " + bases.teamA().dimension().location()));
             return 0;
         }
+        Holder<Biome> arenaBiome = bases.attackerArea().biome();
 
         PlacementPlan teamAPlan = PlacementPlan.from(bases.teamA());
         PlacementPlan attackerPlan = PlacementPlan.from(bases.attackerArea());
@@ -374,7 +384,7 @@ public class WarDayCommands {
         CopyCheck teamACheck = checkDestinationEmpty(defenderSourceLevel, targetLevel, teamAPlan);
         reportCopyCheck(source, bases.teamA().team().getName().getString(), teamACheck);
         CopyCheck attackerCheck = checkDestinationEmpty(attackerSourceLevel, targetLevel, attackerPlan);
-        reportCopyCheck(source, "Automatic surrounding terrain", attackerCheck);
+        reportCopyCheck(source, "Generated battlefield terrain", attackerCheck);
 
         if (!teamACheck.passed() || !attackerCheck.passed()) {
             source.sendSuccess(() -> message(ChatFormatting.YELLOW,
@@ -390,7 +400,8 @@ public class WarDayCommands {
         CopyResult attackerResult = copyBase(attackerSourceLevel, targetLevel, attackerPlan);
         EntityCopyResult attackerEntityResult = copyDecorativeEntities(attackerSourceLevel, targetLevel, attackerPlan);
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Copied automatic surrounding terrain: " + attackerResult.blocksCopied()
+                "Generated fresh " + biomeName(arenaBiome) + " battlefield terrain #"
+                        + (bases.attackerArea().generationSequence() + 1) + ": " + attackerResult.blocksCopied()
                         + " blocks, " + attackerResult.blockEntitiesCopied() + " block entities, "
                         + attackerResult.containersCleared() + " containers cleared, "
                         + attackerEntityResult.entitiesCopied() + " decorative entities, "
@@ -411,18 +422,22 @@ public class WarDayCommands {
                         + teamAEntityResult.entitiesCopied() + " decorative entities, "
                         + teamAEntityResult.itemFramesCleared() + " item frames cleared, "
                         + teamAEntityResult.entitiesFailed() + " decorative entities failed validation/copy."), true);
+        int biomeChunksUpdated = applyArenaBiome(targetLevel, arenaBiome);
+        source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                "Matched the complete arena biome to " + biomeName(arenaBiome)
+                        + " across " + biomeChunksUpdated + " intersecting chunks."), true);
         Optional<BlockPos> safeAttackerSpawn = findSafeSpawnPos(targetLevel, attackerPlan);
         if (safeAttackerSpawn.isEmpty()) {
             source.sendFailure(message(ChatFormatting.RED,
-                    "No safe two-block-tall attacker landing spot was found near the automatically selected claim outskirts at "
+                    "No safe two-block-tall attacker landing spot was found near the opposite arena corner at "
                             + formatPos(bases.attackerArea().spawnTargetPos())
-                            + ". Clear nearby terrain or adjust the defender claim, then rerun /warday prepare confirm."));
+                            + ". Rerun preparation after checking the generated terrain and configured arena size."));
             return 0;
         }
         BlockPos spawnPos = safeAttackerSpawn.get();
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
                 "Validated automatic attacker spawn at " + formatPos(spawnPos)
-                        + " outside the defender claim after applying its overlay."), true);
+                        + " in the corner opposite the defender base."), true);
         int entityLimit = WarDayConfig.MAX_PREPARED_ENTITIES.getAsInt();
         Set<UUID> capturedEntityRoots = new HashSet<>();
         EntityTemplateCapture defenderEntityCapture = capturePreparedEntityTemplates(
@@ -463,7 +478,8 @@ public class WarDayCommands {
                         + " entity groups for match-time cloning; skipped " + entityTemplatesSkipped + "."
         ), true);
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "War Day preparation complete. Arena, automatic attacker spawn, nexus, and entity templates are ready. Next: /warday start.")
+                "War Day preparation complete. Arena biome " + biomeName(arenaBiome)
+                        + ", generated terrain, opposite-corner attacker spawn, nexus, and entity templates are ready. Next: /warday start.")
                 .withStyle(ChatFormatting.BOLD), true);
         return 1;
     }
@@ -482,6 +498,8 @@ public class WarDayCommands {
                 "Prepared state saved: " + state.isPrepared()), false);
         source.sendSuccess(() -> message(state.isActive() ? ChatFormatting.GREEN : ChatFormatting.GRAY,
                 "Active: " + state.isActive()), false);
+        source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                "Next fresh terrain generation: " + (state.terrainGenerationSequence() + 1)), false);
 
         if (state.isPrepared()) {
             source.sendSuccess(() -> message(ChatFormatting.GRAY, "Saved dimension: " + state.warDayDimension()), false);
@@ -575,7 +593,7 @@ public class WarDayCommands {
                     "No safe attacker spawn exists. Repair the platform and rerun /warday prepare confirm."));
             return 0;
         }
-        if (!isInsideConfiguredMatchBorder(copiedNexusPos, attackerSpawn.get())) {
+        if (!isInsideConfiguredMatchBorder(attackerSpawn.get())) {
             source.sendFailure(message(ChatFormatting.RED,
                     "The prepared attacker spawn is outside the configured match border. Rerun /warday prepare confirm with this updated mod before starting."));
             return 0;
@@ -623,7 +641,7 @@ public class WarDayCommands {
         );
 
         warDayLevel.getGameRules().getRule(GameRules.RULE_KEEPINVENTORY).set(true, source.getServer());
-        configureWorldBorder(warDayLevel, state.copiedNexusPos().get());
+        configureWorldBorder(warDayLevel);
         spawnNexusMarker(warDayLevel, state, state.copiedNexusPos().get());
         DEATH_COUNTS.clear();
         clearRapidBreakPenalties(source.getServer());
@@ -961,7 +979,7 @@ public class WarDayCommands {
         }
 
         BlockPos nexusPos = state.copiedNexusPos().get();
-        if (!isInMatchBounds(event.getPos(), nexusPos)) {
+        if (!isInMatchBounds(event.getPos())) {
             event.setCanceled(true);
             player.displayClientMessage(message(ChatFormatting.RED, "You cannot break blocks outside the War Day bounds."), true);
             return;
@@ -1010,7 +1028,7 @@ public class WarDayCommands {
                 || !level.dimension().location().toString().equals(state.warDayDimension())
                 || player.gameMode.getGameModeForPlayer() != GameType.SURVIVAL
                 || !(state.isDefenderParticipant(playerId) || state.isAttackerParticipant(playerId))
-                || !isInMatchBounds(event.getPos(), state.copiedNexusPos().get())
+                || !isInMatchBounds(event.getPos())
                 || event.getState().is(WarDayMod.NEXUS.get())
                 || event.getState().is(WarDayMod.FORWARD_MARKER.get())
                 || event.getState().is(WarDayMod.ATTACKER_SPAWN.get())) {
@@ -1043,7 +1061,7 @@ public class WarDayCommands {
         }
 
         BlockPos nexusPos = state.copiedNexusPos().get();
-        if (!isInMatchBounds(event.getPos(), nexusPos)) {
+        if (!isInMatchBounds(event.getPos())) {
             event.setCanceled(true);
             if (event.getEntity() instanceof ServerPlayer player) {
                 player.displayClientMessage(message(ChatFormatting.RED, "You cannot place blocks outside the War Day bounds."), true);
@@ -1660,12 +1678,11 @@ public class WarDayCommands {
             return;
         }
 
-        BlockPos nexusPos = state.copiedNexusPos().get();
         int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
-        int minChunkX = Math.floorDiv(nexusPos.getX() - halfSize, 16);
-        int maxChunkX = Math.floorDiv(nexusPos.getX() + halfSize, 16);
-        int minChunkZ = Math.floorDiv(nexusPos.getZ() - halfSize, 16);
-        int maxChunkZ = Math.floorDiv(nexusPos.getZ() + halfSize, 16);
+        int minChunkX = Math.floorDiv(-halfSize, 16);
+        int maxChunkX = Math.floorDiv(halfSize - 1, 16);
+        int minChunkZ = Math.floorDiv(-halfSize, 16);
+        int maxChunkZ = Math.floorDiv(halfSize - 1, 16);
 
         for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
             for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
@@ -1674,7 +1691,7 @@ public class WarDayCommands {
                     continue;
                 }
                 for (Map.Entry<BlockPos, BlockEntity> entry : chunk.getBlockEntities().entrySet()) {
-                    if (!isInMatchBounds(entry.getKey(), nexusPos)) {
+                    if (!isInMatchBounds(entry.getKey())) {
                         continue;
                     }
                     if (entry.getValue() instanceof Container container) {
@@ -1687,7 +1704,7 @@ public class WarDayCommands {
         }
 
         for (Entity entity : level.getAllEntities()) {
-            if (entity instanceof ItemFrame itemFrame && isInMatchBounds(itemFrame.blockPosition(), nexusPos)) {
+            if (entity instanceof ItemFrame itemFrame && isInMatchBounds(itemFrame.blockPosition())) {
                 itemFrame.setItem(ItemStack.EMPTY, false);
             }
         }
@@ -2164,16 +2181,15 @@ public class WarDayCommands {
         }
     }
 
-    private static void configureWorldBorder(ServerLevel level, BlockPos nexusPos) {
+    private static void configureWorldBorder(ServerLevel level) {
         double size = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2.0D;
-        level.getWorldBorder().setCenter(nexusPos.getX() + 0.5D, nexusPos.getZ() + 0.5D);
+        level.getWorldBorder().setCenter(0.0D, 0.0D);
         level.getWorldBorder().setSize(size);
     }
 
-    private static boolean isInsideConfiguredMatchBorder(BlockPos nexusPos, BlockPos pos) {
+    private static boolean isInsideConfiguredMatchBorder(BlockPos pos) {
         int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
-        return Math.abs(pos.getX() - nexusPos.getX()) < halfSize
-                && Math.abs(pos.getZ() - nexusPos.getZ()) < halfSize;
+        return WarDayAttackerTerrainPlan.insideArena(pos.getX(), pos.getZ(), halfSize);
     }
 
     private static void restoreWorldBorder(ServerLevel level, WarDayState state) {
@@ -2201,15 +2217,14 @@ public class WarDayCommands {
             return;
         }
 
-        BlockPos nexusPos = state.copiedNexusPos().get();
         int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
         AABB bounds = new AABB(
-                nexusPos.getX() - halfSize,
+                -halfSize,
                 level.getMinBuildHeight(),
-                nexusPos.getZ() - halfSize,
-                nexusPos.getX() + halfSize,
+                -halfSize,
+                halfSize,
                 level.getMaxBuildHeight(),
-                nexusPos.getZ() + halfSize
+                halfSize
         );
 
         for (Entity entity : level.getEntities((Entity) null, bounds, WarDayCommands::isTransientMatchEntity)) {
@@ -2260,12 +2275,9 @@ public class WarDayCommands {
         return attackerTeam.map(team -> team.getMembers().contains(player.getUUID())).orElse(false);
     }
 
-    private static boolean isInMatchBounds(BlockPos pos, BlockPos nexusPos) {
+    private static boolean isInMatchBounds(BlockPos pos) {
         int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
-        return pos.getX() >= nexusPos.getX() - halfSize
-                && pos.getX() < nexusPos.getX() + halfSize
-                && pos.getZ() >= nexusPos.getZ() - halfSize
-                && pos.getZ() < nexusPos.getZ() + halfSize;
+        return WarDayAttackerTerrainPlan.insideArena(pos.getX(), pos.getZ(), halfSize);
     }
 
     private static void trackDiggingPenalty(ServerPlayer player, long gameTime) {
@@ -2659,10 +2671,27 @@ public class WarDayCommands {
         }
 
         BaseArea teamA = BaseArea.from(teamAValidation, context.chunkManager());
-        Optional<AttackerArea> attackerArea = AttackerArea.from(teamA);
+        Optional<ResourceKey<Level>> targetDimension = warDayDimensionKey(source);
+        if (targetDimension.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<PlacementPlan> defenderPlan = PlacementPlan.defenderCorner(teamA);
+        if (defenderPlan.isEmpty()) {
+            int arenaSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2;
+            source.sendFailure(message(ChatFormatting.RED,
+                    "The rotated defender claim is too large to fit fully inside the " + arenaSize + "x" + arenaSize
+                            + " arena with an opposite attacker corner."));
+            return Optional.empty();
+        }
+        long generationSequence = WarDayState.get(source.getServer()).terrainGenerationSequence();
+        Optional<AttackerArea> attackerArea = AttackerArea.from(teamA, context.level(), generationSequence);
         if (attackerArea.isEmpty()) {
             source.sendFailure(message(ChatFormatting.RED,
-                    "The defender claim reaches too close to the attacker-side arena border. Leave room outside the claim or increase the configured map size."));
+                    "Could not find a continuous " + (WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2) + "x"
+                            + (WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2) + " remote terrain area matching biome "
+                            + biomeName(context.level().getBiome(teamA.nexus().pos())) + " after "
+                            + WarDayConfig.BIOME_TERRAIN_SEARCH_ATTEMPTS.getAsInt()
+                            + " bounded attempts. Increase the biome terrain search settings or choose a larger biome."));
             return Optional.empty();
         }
         boolean teamAWithinLimits = reportAndCheckGuardrails(source, teamA);
@@ -2952,8 +2981,8 @@ public class WarDayCommands {
         boolean passed = attackerArea.cluster().size() <= maxChunks;
         ChatFormatting color = passed ? ChatFormatting.GREEN : ChatFormatting.RED;
         source.sendSuccess(() -> message(color,
-                "Automatic surrounding-terrain guardrail: exact arena coverage uses " + attackerArea.cluster().size()
-                        + "/" + maxChunks + " source chunks"), false);
+                "Generated-terrain guardrail: exact arena coverage uses " + attackerArea.cluster().size()
+                        + "/" + maxChunks + " remote biome-matched source chunks"), false);
         return passed;
     }
 
@@ -2969,11 +2998,11 @@ public class WarDayCommands {
         if (plan.automaticSpawnTarget().isPresent()) {
             int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
             source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                    "- terrain coverage: complete " + (halfSize * 2) + "x" + (halfSize * 2)
+                    "- generated terrain coverage: complete " + (halfSize * 2) + "x" + (halfSize * 2)
                             + " arena from [" + -halfSize + ", " + -halfSize + "] to ["
                             + (halfSize - 1) + ", " + (halfSize - 1) + "]"), false);
             source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                    "- attacker spawn: automatic claim-outskirts target "
+                    "- attacker spawn: diagonal opposite-corner target "
                             + formatPos(plan.automaticSpawnTarget().orElseThrow())), false);
         } else {
             source.sendSuccess(() -> message(ChatFormatting.GRAY,
@@ -3170,6 +3199,37 @@ public class WarDayCommands {
             }
         }
         return wiped;
+    }
+
+    private static int applyArenaBiome(ServerLevel targetLevel, Holder<Biome> arenaBiome) {
+        int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+        int minChunk = Math.floorDiv(-halfSize, 16);
+        int maxChunk = Math.floorDiv(halfSize - 1, 16);
+        List<LevelChunk> updatedChunks = new ArrayList<>();
+        var sampler = targetLevel.getChunkSource().randomState().sampler();
+        for (int chunkX = minChunk; chunkX <= maxChunk; chunkX++) {
+            for (int chunkZ = minChunk; chunkZ <= maxChunk; chunkZ++) {
+                LevelChunk targetChunk = targetLevel.getChunk(chunkX, chunkZ);
+                targetChunk.fillBiomesFromNoise((quartX, quartY, quartZ, ignoredSampler) -> arenaBiome, sampler);
+                targetChunk.setUnsaved(true);
+                updatedChunks.add(targetChunk);
+            }
+        }
+
+        for (int offset = 0; offset < updatedChunks.size(); offset += 16) {
+            int end = Math.min(offset + 16, updatedChunks.size());
+            ClientboundChunksBiomesPacket packet = ClientboundChunksBiomesPacket.forChunks(updatedChunks.subList(offset, end));
+            for (ServerPlayer player : targetLevel.players()) {
+                player.connection.send(packet);
+            }
+        }
+        return updatedChunks.size();
+    }
+
+    private static String biomeName(Holder<Biome> biome) {
+        return biome.unwrapKey()
+                .map(key -> key.location().toString())
+                .orElse(biome.getRegisteredName());
     }
 
     private static int clearDestinationArenaDecorativeEntities(ServerLevel targetLevel) {
@@ -3759,28 +3819,31 @@ public class WarDayCommands {
     }
 
     private record AttackerArea(
-            BaseArea defenderBase,
             Set<ChunkDimPos> cluster,
             ClusterBounds bounds,
             ResourceKey<Level> dimension,
-            BlockPos spawnTargetPos
+            BlockPos sourceAnchorPos,
+            BlockPos spawnTargetPos,
+            Holder<Biome> biome,
+            long generationSequence
     ) {
-        private static Optional<AttackerArea> from(BaseArea defenderBase) {
+        private static Optional<AttackerArea> from(
+                BaseArea defenderBase,
+                ServerLevel sourceLevel,
+                long generationSequence
+        ) {
             int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
-            PlacementPlan defenderPlan = PlacementPlan.from(defenderBase);
-            OptionalInt spawnX = WarDayAttackerTerrainPlan.automaticSpawnX(
-                    defenderPlan.targetMaxX(), halfSize, MATCH_BORDER_SPAWN_MARGIN, MATCH_BORDER_SPAWN_MARGIN);
-            if (spawnX.isEmpty()) {
+            int spawnEdge = WarDayAttackerTerrainPlan.edgeTargetOffset(
+                    halfSize, MATCH_BORDER_SPAWN_MARGIN);
+            Holder<Biome> biome = sourceLevel.getBiome(defenderBase.nexus().pos());
+            Optional<BlockPos> sourceAnchorResult = findMatchingTerrainAnchor(
+                    sourceLevel, defenderBase.nexus().pos(), biome, halfSize, generationSequence);
+            if (sourceAnchorResult.isEmpty()) {
                 return Optional.empty();
             }
-            int maximumSafeOffset = WarDayAttackerTerrainPlan.edgeTargetOffset(
-                    halfSize, MATCH_BORDER_SPAWN_MARGIN);
-            int forwardMarkerZ = defenderPlan.targetPos(defenderBase.forwardMarker().pos()).getZ();
-            int spawnZ = Math.clamp(forwardMarkerZ, -maximumSafeOffset, maximumSafeOffset);
-            BlockPos sourceAnchor = defenderBase.nexus().pos();
-            WarDayAttackerTerrainPlan.SourceWindow window = WarDayAttackerTerrainPlan.rotatedSourceWindow(
-                    sourceAnchor.getX(), sourceAnchor.getZ(), 0, 0, halfSize,
-                    defenderPlan.rotationQuarterTurns());
+            BlockPos sourceAnchor = sourceAnchorResult.get();
+            WarDayAttackerTerrainPlan.SourceWindow window = WarDayAttackerTerrainPlan.sourceWindow(
+                    sourceAnchor.getX(), sourceAnchor.getZ(), 0, 0, halfSize);
             Set<ChunkDimPos> cluster = new HashSet<>();
             for (int chunkX = window.minChunkX(); chunkX <= window.maxChunkX(); chunkX++) {
                 for (int chunkZ = window.minChunkZ(); chunkZ <= window.maxChunkZ(); chunkZ++) {
@@ -3789,12 +3852,116 @@ public class WarDayCommands {
             }
             Set<ChunkDimPos> immutableCluster = Set.copyOf(cluster);
             return Optional.of(new AttackerArea(
-                    defenderBase,
                     immutableCluster,
                     ClusterBounds.from(immutableCluster),
                     defenderBase.dimension(),
-                    new BlockPos(spawnX.getAsInt(), WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), spawnZ)
+                    sourceAnchor,
+                    new BlockPos(-spawnEdge, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), spawnEdge),
+                    biome,
+                    generationSequence
             ));
+        }
+
+        private static Optional<BlockPos> findMatchingTerrainAnchor(
+                ServerLevel sourceLevel,
+                BlockPos defenderNexus,
+                Holder<Biome> biome,
+                int halfSize,
+                long generationSequence
+        ) {
+            ChunkGenerator generator = sourceLevel.getChunkSource().getGenerator();
+            BiomeSource biomeSource = generator.getBiomeSource();
+            var randomState = sourceLevel.getChunkSource().randomState();
+            var sampler = randomState.sampler();
+            int searchRadius = WarDayConfig.BIOME_TERRAIN_SEARCH_RADIUS_BLOCKS.getAsInt();
+            int attempts = WarDayConfig.BIOME_TERRAIN_SEARCH_ATTEMPTS.getAsInt();
+            int samplesPerAttempt = Math.max(128, Math.min(2048, searchRadius / 8));
+            int generatedNexusSurface = generator.getBaseHeight(
+                    defenderNexus.getX(), defenderNexus.getZ(), Heightmap.Types.WORLD_SURFACE_WG,
+                    sourceLevel, randomState);
+            boolean sampleGeneratedSurface = !sourceLevel.dimensionType().hasCeiling()
+                    && defenderNexus.getY() >= generatedNexusSurface - 16;
+
+            for (int attempt = 0; attempt < attempts; attempt++) {
+                WarDayAttackerTerrainPlan.SourceAnchor origin =
+                        WarDayAttackerTerrainPlan.generatedTerrainAnchor(
+                                defenderNexus.getX(), defenderNexus.getZ(), generationSequence, attempt);
+                long randomSeed = ChunkPos.asLong(Math.floorDiv(origin.x(), 16), Math.floorDiv(origin.z(), 16))
+                        ^ generationSequence ^ ((long) attempt << 32);
+                RandomSource random = RandomSource.create(randomSeed);
+                for (int sample = 0; sample < samplesPerAttempt; sample++) {
+                    int candidateX = origin.x() + random.nextInt(searchRadius * 2 + 1) - searchRadius;
+                    int candidateZ = origin.z() + random.nextInt(searchRadius * 2 + 1) - searchRadius;
+                    int anchorX = Math.floorDiv(candidateX, 16) * 16 + 8;
+                    int anchorZ = Math.floorDiv(candidateZ, 16) * 16 + 8;
+                    Holder<Biome> centerBiome = terrainLayerBiome(
+                            sourceLevel, generator, biomeSource, randomState, sampler,
+                            anchorX, anchorZ, defenderNexus.getY(), sampleGeneratedSurface);
+                    if (!centerBiome.is(biome)) {
+                        continue;
+                    }
+
+                    WarDayAttackerTerrainPlan.SourceWindow window = WarDayAttackerTerrainPlan.sourceWindow(
+                            anchorX, anchorZ, 0, 0, halfSize);
+                    if (windowMatchesBiome(
+                            sourceLevel, generator, biomeSource, randomState, sampler, biome,
+                            defenderNexus.getY(), sampleGeneratedSurface, window)) {
+                        return Optional.of(new BlockPos(anchorX, defenderNexus.getY(), anchorZ));
+                    }
+                }
+            }
+            return Optional.empty();
+        }
+
+        private static boolean windowMatchesBiome(
+                ServerLevel sourceLevel,
+                ChunkGenerator generator,
+                BiomeSource biomeSource,
+                net.minecraft.world.level.levelgen.RandomState randomState,
+                net.minecraft.world.level.biome.Climate.Sampler sampler,
+                Holder<Biome> biome,
+                int defenderY,
+                boolean sampleGeneratedSurface,
+                WarDayAttackerTerrainPlan.SourceWindow window
+        ) {
+            int minQuartX = QuartPos.fromBlock(window.minSourceX());
+            int maxQuartX = QuartPos.fromBlock(window.maxSourceX());
+            int minQuartZ = QuartPos.fromBlock(window.minSourceZ());
+            int maxQuartZ = QuartPos.fromBlock(window.maxSourceZ());
+            for (int quartX = minQuartX; quartX <= maxQuartX; quartX++) {
+                for (int quartZ = minQuartZ; quartZ <= maxQuartZ; quartZ++) {
+                    int blockX = QuartPos.toBlock(quartX) + 2;
+                    int blockZ = QuartPos.toBlock(quartZ) + 2;
+                    Holder<Biome> candidate = terrainLayerBiome(
+                            sourceLevel, generator, biomeSource, randomState, sampler,
+                            blockX, blockZ, defenderY, sampleGeneratedSurface);
+                    if (!candidate.is(biome)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private static Holder<Biome> terrainLayerBiome(
+                ServerLevel sourceLevel,
+                ChunkGenerator generator,
+                BiomeSource biomeSource,
+                net.minecraft.world.level.levelgen.RandomState randomState,
+                net.minecraft.world.level.biome.Climate.Sampler sampler,
+                int blockX,
+                int blockZ,
+                int defenderY,
+                boolean sampleGeneratedSurface
+        ) {
+            int biomeY = defenderY;
+            if (sampleGeneratedSurface) {
+                int surfaceY = generator.getBaseHeight(
+                        blockX, blockZ, Heightmap.Types.WORLD_SURFACE_WG, sourceLevel, randomState);
+                biomeY = Math.max(sourceLevel.getMinBuildHeight(), surfaceY - 1);
+            }
+            return biomeSource.getNoiseBiome(
+                    QuartPos.fromBlock(blockX), QuartPos.fromBlock(biomeY), QuartPos.fromBlock(blockZ), sampler);
         }
     }
 
@@ -3811,34 +3978,48 @@ public class WarDayCommands {
             Optional<BaseArea> baseArea,
             Optional<BlockPos> automaticSpawnTarget
     ) {
-        private static final Direction DEFENDER_TARGET_FACING = Direction.EAST;
+        private static final Direction DEFENDER_TARGET_FACING = Direction.WEST;
 
-        private static PlacementPlan from(BaseArea baseArea, BlockPos targetAnchorPos) {
-            return new PlacementPlan(
+        private static Optional<PlacementPlan> defenderCorner(BaseArea baseArea) {
+            PlacementPlan centered = new PlacementPlan(
                     baseArea.team().getName().getString(),
                     baseArea.dimension(),
                     baseArea.nexus().pos(),
                     baseArea.cluster(),
                     baseArea.bounds(),
-                    targetAnchorPos,
+                    new BlockPos(0, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0),
                     Optional.of(baseArea),
                     Optional.empty()
             );
+            TargetFootprint relative = centered.unclippedTargetFootprint();
+            Optional<WarDayAttackerTerrainPlan.CornerLayout> layout = WarDayAttackerTerrainPlan.cornerLayout(
+                    relative.minX(), relative.maxX(), relative.minZ(), relative.maxZ(),
+                    WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt(), MATCH_BORDER_SPAWN_MARGIN);
+            return layout.map(value -> new PlacementPlan(
+                    baseArea.team().getName().getString(),
+                    baseArea.dimension(),
+                    baseArea.nexus().pos(),
+                    baseArea.cluster(),
+                    baseArea.bounds(),
+                    new BlockPos(value.defenderAnchorX(), WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), value.defenderAnchorZ()),
+                    Optional.of(baseArea),
+                    Optional.empty()
+            ));
         }
 
         private static PlacementPlan from(BaseArea baseArea) {
-            return from(baseArea, new BlockPos(0, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0));
+            return defenderCorner(baseArea).orElseThrow();
         }
 
         private static PlacementPlan from(AttackerArea area) {
             return new PlacementPlan(
-                    "Automatic surrounding terrain",
+                    "Generated battlefield terrain",
                     area.dimension(),
-                    area.defenderBase().nexus().pos(),
+                    area.sourceAnchorPos(),
                     area.cluster(),
                     area.bounds(),
                     new BlockPos(0, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), 0),
-                    Optional.of(area.defenderBase()),
+                    Optional.empty(),
                     Optional.of(area.spawnTargetPos())
             );
         }
@@ -3997,16 +4178,7 @@ public class WarDayCommands {
             };
         }
 
-        private int rotationQuarterTurns() {
-            return switch (rotation()) {
-                case NONE -> 0;
-                case CLOCKWISE_90 -> 1;
-                case CLOCKWISE_180 -> 2;
-                case COUNTERCLOCKWISE_90 -> 3;
-            };
-        }
-
-        private TargetFootprint targetFootprint() {
+        private TargetFootprint unclippedTargetFootprint() {
             int minX = Integer.MAX_VALUE;
             int minZ = Integer.MAX_VALUE;
             int maxX = Integer.MIN_VALUE;
@@ -4028,12 +4200,17 @@ public class WarDayCommands {
                 }
             }
 
+            return new TargetFootprint(minX, minZ, maxX, maxZ);
+        }
+
+        private TargetFootprint targetFootprint() {
+            TargetFootprint footprint = unclippedTargetFootprint();
             int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
             return new TargetFootprint(
-                    Math.max(minX, -halfSize),
-                    Math.max(minZ, -halfSize),
-                    Math.min(maxX, halfSize - 1),
-                    Math.min(maxZ, halfSize - 1)
+                    Math.max(footprint.minX(), -halfSize),
+                    Math.max(footprint.minZ(), -halfSize),
+                    Math.min(footprint.maxX(), halfSize - 1),
+                    Math.min(footprint.maxZ(), halfSize - 1)
             );
         }
 

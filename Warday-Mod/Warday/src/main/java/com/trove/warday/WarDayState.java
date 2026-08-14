@@ -27,6 +27,7 @@ public class WarDayState extends SavedData {
     private String warDayDimension = "warday:war_day";
     private BlockPos copiedNexusPos;
     private BlockPos attackerSpawnPos;
+    private long terrainGenerationSequence;
     private String defenderTeam = "";
     private String attackerTeam = "";
     private boolean active;
@@ -72,6 +73,7 @@ public class WarDayState extends SavedData {
         if (tag.contains("AttackerSpawnPos")) {
             state.attackerSpawnPos = BlockPos.of(tag.getLong("AttackerSpawnPos"));
         }
+        state.terrainGenerationSequence = Math.max(0L, tag.getLong("TerrainGenerationSequence"));
         state.active = tag.getBoolean("Active");
         state.matchEndGameTime = tag.getLong("MatchEndGameTime");
         state.matchDurationTicks = tag.getLong("MatchDurationTicks");
@@ -156,6 +158,7 @@ public class WarDayState extends SavedData {
         if (attackerSpawnPos != null) {
             tag.putLong("AttackerSpawnPos", attackerSpawnPos.asLong());
         }
+        tag.putLong("TerrainGenerationSequence", terrainGenerationSequence);
         tag.putBoolean("Active", active);
         tag.putLong("MatchEndGameTime", matchEndGameTime);
         tag.putLong("MatchDurationTicks", matchDurationTicks);
@@ -209,6 +212,7 @@ public class WarDayState extends SavedData {
         this.attackerTeam = attackerTeam;
         this.copiedNexusPos = copiedNexusPos;
         this.attackerSpawnPos = attackerSpawnPos;
+        this.terrainGenerationSequence++;
         this.preparedEntityTemplates.clear();
         entityTemplates.forEach(template -> this.preparedEntityTemplates.add(template.copy()));
         setDirty();
@@ -396,6 +400,10 @@ public class WarDayState extends SavedData {
 
     public Optional<BlockPos> attackerSpawnPos() {
         return Optional.ofNullable(attackerSpawnPos);
+    }
+
+    public long terrainGenerationSequence() {
+        return terrainGenerationSequence;
     }
 
     public String defenderTeam() {

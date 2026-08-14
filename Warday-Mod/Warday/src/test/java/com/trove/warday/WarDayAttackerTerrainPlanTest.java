@@ -1,6 +1,6 @@
 package com.trove.warday;
 
-import java.util.OptionalInt;
+import java.util.Optional;
 
 public final class WarDayAttackerTerrainPlanTest {
     private WarDayAttackerTerrainPlanTest() {
@@ -9,14 +9,35 @@ public final class WarDayAttackerTerrainPlanTest {
     public static void main(String[] args) {
         expect(109, WarDayAttackerTerrainPlan.edgeTargetOffset(125, 16), "default eastern edge inset");
         expect(12, WarDayAttackerTerrainPlan.edgeTargetOffset(16, 16), "small arena scales margin");
-        expect(OptionalInt.of(48), WarDayAttackerTerrainPlan.automaticSpawnX(32, 125, 16, 16),
-                "preferred claim-outskirts gap");
-        expect(OptionalInt.of(109), WarDayAttackerTerrainPlan.automaticSpawnX(100, 125, 16, 16),
-                "gap clamps inside border");
-        expect(OptionalInt.of(109), WarDayAttackerTerrainPlan.automaticSpawnX(108, 125, 16, 16),
-                "minimum outside-claim space");
-        expect(OptionalInt.empty(), WarDayAttackerTerrainPlan.automaticSpawnX(109, 125, 16, 16),
-                "claim leaves no safe attacker side");
+        WarDayAttackerTerrainPlan.CornerLayout defaultLayout = WarDayAttackerTerrainPlan.cornerLayout(
+                -31, 32, -15, 16, 125, 16).orElseThrow();
+        expect(77, defaultLayout.defenderAnchorX(), "defender anchor fits northeast corner");
+        expect(-94, defaultLayout.defenderAnchorZ(), "defender anchor fits northern edge");
+        expect(-109, defaultLayout.attackerSpawnX(), "attacker uses opposite western edge");
+        expect(109, defaultLayout.attackerSpawnZ(), "attacker uses opposite southern edge");
+        expect(16, defaultLayout.marginBlocks(), "default corner margin");
+
+        WarDayAttackerTerrainPlan.CornerLayout largeLayout = WarDayAttackerTerrainPlan.cornerLayout(
+                -119, 120, -119, 120, 125, 16).orElseThrow();
+        expect(5, largeLayout.marginBlocks(), "large base reduces margin to remain fully inside arena");
+        expect(-109, largeLayout.attackerSpawnX(), "large base does not push attacker into the border");
+        expect(109, largeLayout.attackerSpawnZ(), "large base keeps the standard opposite corner");
+        expect(Optional.empty(), WarDayAttackerTerrainPlan.cornerLayout(
+                -124, 124, -15, 16, 125, 16), "base requiring the complete arena is rejected");
+
+        WarDayAttackerTerrainPlan.SourceAnchor terrainAnchorA =
+                WarDayAttackerTerrainPlan.generatedTerrainAnchor(1234, -5678);
+        WarDayAttackerTerrainPlan.SourceAnchor terrainAnchorB =
+                WarDayAttackerTerrainPlan.generatedTerrainAnchor(1234, -5678);
+        expect(terrainAnchorA, terrainAnchorB, "generated terrain source is preview-stable");
+        expect(true, Math.abs(terrainAnchorA.x()) > 1_000_000, "generated terrain source stays remote from arena x");
+        expect(true, Math.abs(terrainAnchorA.z()) > 1_000_000, "generated terrain source stays remote from arena z");
+        expect(false, terrainAnchorA.equals(
+                        WarDayAttackerTerrainPlan.generatedTerrainAnchor(1234, -5678, 1L, 0)),
+                "successful preparation advances to a fresh source region");
+        expect(false, terrainAnchorA.equals(
+                        WarDayAttackerTerrainPlan.generatedTerrainAnchor(1234, -5678, 0L, 1)),
+                "bounded biome-search attempts use different remote regions");
 
         expect(true, WarDayAttackerTerrainPlan.insideArena(-125, -125, 125), "minimum border column");
         expect(true, WarDayAttackerTerrainPlan.insideArena(124, 124, 125), "maximum border column");
