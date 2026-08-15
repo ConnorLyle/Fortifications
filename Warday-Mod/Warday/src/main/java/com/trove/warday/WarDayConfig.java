@@ -60,16 +60,16 @@ public final class WarDayConfig {
                 .comment("Target Y level for the copied defender nexus and generated-terrain source anchor during /warday prepare.")
                 .defineInRange("warDayBaseY", 80, -64, 320);
         ATTACKER_TERRAIN_RADIUS_CHUNKS = builder
-                .comment("Legacy terrain-radius setting retained for config compatibility. Prepare now derives an exact remote biome-matched source window.")
+                .comment("Legacy terrain-radius setting retained for config compatibility. Prepare now copies the fixed nexus-centered arena window.")
                 .defineInRange("attackerTerrainRadiusChunks", 8, 0, 12);
         MAX_ATTACKER_TERRAIN_CHUNKS = builder
-                .comment("Safety limit for the biome-matched generated-terrain source window. The default 250x250 arena needs at most 289 chunks.")
+                .comment("Safety limit for chunks intersecting the nexus-centered 256x256 source window. An unaligned nexus needs at most 289 chunks.")
                 .defineInRange("maxAttackerTerrainChunks", 289, 1, 625);
         BIOME_TERRAIN_SEARCH_RADIUS_BLOCKS = builder
-                .comment("Maximum radius searched around each remote candidate for terrain matching the defender nexus biome.")
+                .comment("Legacy remote-biome search setting retained for config compatibility; no longer used by preparation.")
                 .defineInRange("biomeTerrainSearchRadiusBlocks", 8192, 512, 65536);
         BIOME_TERRAIN_SEARCH_ATTEMPTS = builder
-                .comment("Number of deterministic remote regions checked for a continuous arena-sized match to the defender nexus biome.")
+                .comment("Legacy remote-biome search setting retained for config compatibility; no longer used by preparation.")
                 .defineInRange("biomeTerrainSearchAttempts", 24, 1, 128);
         MAX_PREPARED_ENTITIES = builder
                 .comment("Maximum persistent non-player entities captured from both copied areas and recreated for each match. Set to 0 to disable entity templates.")
@@ -87,8 +87,8 @@ public final class WarDayConfig {
                 .comment("Seconds to celebrate the winning team after combat ends before restoring players. Set to 0 to skip the delay.")
                 .defineInRange("victoryFanfareSeconds", 30, 0, 300);
         MAP_HALF_SIZE_BLOCKS = builder
-                .comment("Half-size of the square match bounds centered at the War Day arena origin. 125 gives a 250x250 map.")
-                .defineInRange("mapHalfSizeBlocks", 125, 16, 2048);
+                .comment("Fixed half-size of the nexus-centered War Day arena. 128 gives the required 256x256 map.")
+                .defineInRange("mapHalfSizeBlocks", 128, 128, 128);
         DEFENDER_MATCH_BLOCK = builder
                 .comment("Only placeable block for defender-team participants during War Day.")
                 .define("defenderMatchBlock", "minecraft:blue_wool");

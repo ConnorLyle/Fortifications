@@ -1,6 +1,7 @@
 package com.example.fortifications.events;
 
 import com.example.fortifications.FortificationsMod;
+import com.example.fortifications.FortChestTeamStorage;
 import com.example.fortifications.network.FortificationsNetwork;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -23,6 +24,7 @@ public final class ServerLifecycleHandler {
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         FortificationsMod.GLOBAL_ACTIVE = false;
+        FortChestTeamStorage.clear(event.getServer());
     }
 
     @SubscribeEvent

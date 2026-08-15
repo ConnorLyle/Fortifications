@@ -25,19 +25,15 @@ public final class WarDayAttackerTerrainPlanTest {
         expect(Optional.empty(), WarDayAttackerTerrainPlan.cornerLayout(
                 -124, 124, -15, 16, 125, 16), "base requiring the complete arena is rejected");
 
-        WarDayAttackerTerrainPlan.SourceAnchor terrainAnchorA =
-                WarDayAttackerTerrainPlan.generatedTerrainAnchor(1234, -5678);
-        WarDayAttackerTerrainPlan.SourceAnchor terrainAnchorB =
-                WarDayAttackerTerrainPlan.generatedTerrainAnchor(1234, -5678);
-        expect(terrainAnchorA, terrainAnchorB, "generated terrain source is preview-stable");
-        expect(true, Math.abs(terrainAnchorA.x()) > 1_000_000, "generated terrain source stays remote from arena x");
-        expect(true, Math.abs(terrainAnchorA.z()) > 1_000_000, "generated terrain source stays remote from arena z");
-        expect(false, terrainAnchorA.equals(
-                        WarDayAttackerTerrainPlan.generatedTerrainAnchor(1234, -5678, 1L, 0)),
-                "successful preparation advances to a fresh source region");
-        expect(false, terrainAnchorA.equals(
-                        WarDayAttackerTerrainPlan.generatedTerrainAnchor(1234, -5678, 0L, 1)),
-                "bounded biome-search attempts use different remote regions");
+        var corners = WarDayAttackerTerrainPlan.cornerSpawnTargets(128, 16);
+        expect(4, corners.size(), "four attacker corner targets");
+        expect(new WarDayAttackerTerrainPlan.CornerSpawn("Northwest", -112, -112), corners.get(0), "northwest target");
+        expect(new WarDayAttackerTerrainPlan.CornerSpawn("Northeast", 112, -112), corners.get(1), "northeast target");
+        expect(new WarDayAttackerTerrainPlan.CornerSpawn("Southwest", -112, 112), corners.get(2), "southwest target");
+        expect(new WarDayAttackerTerrainPlan.CornerSpawn("Southeast", 112, 112), corners.get(3), "southeast target");
+        expect(0, WarDayAttackerTerrainPlan.fallbackCornerIndex(1, 4), "first death fallback");
+        expect(3, WarDayAttackerTerrainPlan.fallbackCornerIndex(4, 4), "fourth death fallback");
+        expect(0, WarDayAttackerTerrainPlan.fallbackCornerIndex(5, 4), "fallback wraps corners");
 
         expect(true, WarDayAttackerTerrainPlan.insideArena(-125, -125, 125), "minimum border column");
         expect(true, WarDayAttackerTerrainPlan.insideArena(124, 124, 125), "maximum border column");
@@ -45,34 +41,34 @@ public final class WarDayAttackerTerrainPlanTest {
         expect(false, WarDayAttackerTerrainPlan.insideArena(-126, 0, 125), "below negative border");
 
         WarDayAttackerTerrainPlan.SourceWindow defaultWindow = WarDayAttackerTerrainPlan.sourceWindow(
-                1_000, -1_000, 0, 0, 125);
-        expect(875, defaultWindow.minSourceX(), "translated minimum source x");
-        expect(1_124, defaultWindow.maxSourceX(), "translated maximum source x");
-        expect(-1_125, defaultWindow.minSourceZ(), "translated minimum source z");
-        expect(-876, defaultWindow.maxSourceZ(), "translated maximum source z");
-        expect(250, defaultWindow.blockWidth(), "full arena width");
-        expect(250, defaultWindow.blockDepth(), "full arena depth");
+                1_000, -1_000, 0, 0, 128);
+        expect(872, defaultWindow.minSourceX(), "translated minimum source x");
+        expect(1_127, defaultWindow.maxSourceX(), "translated maximum source x");
+        expect(-1_128, defaultWindow.minSourceZ(), "translated minimum source z");
+        expect(-873, defaultWindow.maxSourceZ(), "translated maximum source z");
+        expect(256, defaultWindow.blockWidth(), "full arena width");
+        expect(256, defaultWindow.blockDepth(), "full arena depth");
         expect(true, defaultWindow.chunkCount() <= 289, "default guardrail");
 
         for (int turns = 0; turns < 4; turns++) {
             WarDayAttackerTerrainPlan.SourceWindow rotated = WarDayAttackerTerrainPlan.rotatedSourceWindow(
-                    1_000, -1_000, 0, 0, 125, turns);
-            expect(250, rotated.blockWidth(), "rotated full width " + turns);
-            expect(250, rotated.blockDepth(), "rotated full depth " + turns);
+                    1_000, -1_000, 0, 0, 128, turns);
+            expect(256, rotated.blockWidth(), "rotated full width " + turns);
+            expect(256, rotated.blockDepth(), "rotated full depth " + turns);
             expect(true, rotated.chunkCount() <= 289, "rotated default guardrail " + turns);
         }
         WarDayAttackerTerrainPlan.SourceWindow clockwise = WarDayAttackerTerrainPlan.rotatedSourceWindow(
-                1_000, -1_000, 0, 0, 125, 1);
-        expect(-1_124, clockwise.minSourceZ(), "clockwise even-size minimum z");
-        expect(-875, clockwise.maxSourceZ(), "clockwise even-size maximum z");
+                1_000, -1_000, 0, 0, 128, 1);
+        expect(-1_127, clockwise.minSourceZ(), "clockwise even-size minimum z");
+        expect(-872, clockwise.maxSourceZ(), "clockwise even-size maximum z");
 
         WarDayAttackerTerrainPlan.SourceWindow negativeWindow = WarDayAttackerTerrainPlan.sourceWindow(
-                -1, -1, 0, 0, 125);
-        expect(-8, negativeWindow.minChunkX(), "negative x floor division");
+                -1, -1, 0, 0, 128);
+        expect(-9, negativeWindow.minChunkX(), "negative x floor division");
         expect(7, negativeWindow.maxChunkX(), "negative x maximum chunk");
-        expect(-8, negativeWindow.minChunkZ(), "negative z floor division");
+        expect(-9, negativeWindow.minChunkZ(), "negative z floor division");
         expect(7, negativeWindow.maxChunkZ(), "negative z maximum chunk");
-        expect(256, negativeWindow.chunkCount(), "aligned negative window chunk count");
+        expect(289, negativeWindow.chunkCount(), "unaligned nexus-centered window chunk count");
     }
 
     private static void expect(Object expected, Object actual, String label) {
