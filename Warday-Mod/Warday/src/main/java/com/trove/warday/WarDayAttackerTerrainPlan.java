@@ -1,6 +1,7 @@
 package com.trove.warday;
 
 import java.util.Optional;
+import java.util.List;
 
 public final class WarDayAttackerTerrainPlan {
     // Pure placement math shared by preview, preparation, and focused verification.
@@ -11,6 +12,23 @@ public final class WarDayAttackerTerrainPlan {
         int halfSize = Math.max(1, halfSizeBlocks);
         int margin = Math.min(Math.max(1, marginBlocks), Math.max(1, halfSize / 4));
         return Math.max(0, halfSize - margin);
+    }
+
+    public static List<CornerSpawn> cornerSpawnTargets(int halfSizeBlocks, int marginBlocks) {
+        int edge = edgeTargetOffset(halfSizeBlocks, marginBlocks);
+        return List.of(
+                new CornerSpawn("Northwest", -edge, -edge),
+                new CornerSpawn("Northeast", edge, -edge),
+                new CornerSpawn("Southwest", -edge, edge),
+                new CornerSpawn("Southeast", edge, edge)
+        );
+    }
+
+    public static int fallbackCornerIndex(int deathCount, int cornerCount) {
+        if (cornerCount < 1) {
+            throw new IllegalArgumentException("At least one corner is required");
+        }
+        return Math.floorMod(Math.max(1, deathCount) - 1, cornerCount);
     }
 
     public static Optional<CornerLayout> cornerLayout(
@@ -42,34 +60,6 @@ public final class WarDayAttackerTerrainPlan {
                 spawnEdge,
                 margin
         ));
-    }
-
-    public static SourceAnchor generatedTerrainAnchor(int nexusX, int nexusZ) {
-        return generatedTerrainAnchor(nexusX, nexusZ, 0L, 0);
-    }
-
-    public static SourceAnchor generatedTerrainAnchor(
-            int nexusX,
-            int nexusZ,
-            long generationSequence,
-            int searchAttempt
-    ) {
-        long mixed = mix64((((long) nexusX) << 32)
-                ^ Integer.toUnsignedLong(nexusZ)
-                ^ mix64(generationSequence)
-                ^ mix64(searchAttempt)
-                ^ 0x574152444159L);
-        int chunkX = 100_000 + (int) Math.floorMod(mixed, 500_000L);
-        int chunkZ = -100_000 - (int) Math.floorMod(mix64(mixed), 500_000L);
-        return new SourceAnchor(chunkX * 16 + 8, chunkZ * 16 + 8);
-    }
-
-    private static long mix64(long value) {
-        value ^= value >>> 33;
-        value *= 0xff51afd7ed558ccdl;
-        value ^= value >>> 33;
-        value *= 0xc4ceb9fe1a85ec53l;
-        return value ^ value >>> 33;
     }
 
     public static SourceWindow sourceWindow(
@@ -182,6 +172,7 @@ public final class WarDayAttackerTerrainPlan {
     ) {
     }
 
-    public record SourceAnchor(int x, int z) {
+    public record CornerSpawn(String name, int x, int z) {
     }
+
 }

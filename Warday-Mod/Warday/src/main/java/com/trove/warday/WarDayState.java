@@ -27,6 +27,7 @@ public class WarDayState extends SavedData {
     private String warDayDimension = "warday:war_day";
     private BlockPos copiedNexusPos;
     private BlockPos attackerSpawnPos;
+    private final List<BlockPos> attackerSpawnPositions = new ArrayList<>();
     private long terrainGenerationSequence;
     private String defenderTeam = "";
     private String attackerTeam = "";
@@ -53,6 +54,7 @@ public class WarDayState extends SavedData {
     private final Set<UUID> attackerParticipants = new HashSet<>();
     private final Map<UUID, Integer> deathCounts = new HashMap<>();
     private final Map<UUID, Integer> pendingRespawnTicks = new HashMap<>();
+    private final Map<UUID, Integer> respawnCornerChoices = new HashMap<>();
 
     public static WarDayState get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(
@@ -72,6 +74,12 @@ public class WarDayState extends SavedData {
         }
         if (tag.contains("AttackerSpawnPos")) {
             state.attackerSpawnPos = BlockPos.of(tag.getLong("AttackerSpawnPos"));
+        }
+        for (long packed : tag.getLongArray("AttackerSpawnPositions")) {
+            state.attackerSpawnPositions.add(BlockPos.of(packed));
+        }
+        if (state.attackerSpawnPositions.isEmpty() && state.attackerSpawnPos != null) {
+            state.attackerSpawnPositions.add(state.attackerSpawnPos);
         }
         state.terrainGenerationSequence = Math.max(0L, tag.getLong("TerrainGenerationSequence"));
         state.active = tag.getBoolean("Active");
@@ -103,6 +111,7 @@ public class WarDayState extends SavedData {
         loadUuidSet(tag.getList("AttackerParticipants", 10), state.attackerParticipants);
         loadUuidIntMap(tag.getList("DeathCounts", 10), "Deaths", state.deathCounts);
         loadUuidIntMap(tag.getList("PendingRespawns", 10), "Ticks", state.pendingRespawnTicks);
+        loadUuidIntMap(tag.getList("RespawnCornerChoices", 10), "Corner", state.respawnCornerChoices);
 
         ListTag players = tag.getList("SavedPlayers", 10);
         for (int i = 0; i < players.size(); i++) {
@@ -158,6 +167,8 @@ public class WarDayState extends SavedData {
         if (attackerSpawnPos != null) {
             tag.putLong("AttackerSpawnPos", attackerSpawnPos.asLong());
         }
+        tag.putLongArray("AttackerSpawnPositions",
+                attackerSpawnPositions.stream().mapToLong(BlockPos::asLong).toArray());
         tag.putLong("TerrainGenerationSequence", terrainGenerationSequence);
         tag.putBoolean("Active", active);
         tag.putLong("MatchEndGameTime", matchEndGameTime);
@@ -187,6 +198,7 @@ public class WarDayState extends SavedData {
         tag.put("AttackerParticipants", saveUuidSet(attackerParticipants));
         tag.put("DeathCounts", saveUuidIntMap(deathCounts, "Deaths"));
         tag.put("PendingRespawns", saveUuidIntMap(pendingRespawnTicks, "Ticks"));
+        tag.put("RespawnCornerChoices", saveUuidIntMap(respawnCornerChoices, "Corner"));
 
         ListTag players = new ListTag();
         savedPlayers.forEach((uuid, snapshot) -> {
@@ -203,7 +215,7 @@ public class WarDayState extends SavedData {
             String defenderTeam,
             String attackerTeam,
             BlockPos copiedNexusPos,
-            BlockPos attackerSpawnPos,
+            List<BlockPos> attackerSpawnPositions,
             List<CompoundTag> entityTemplates
     ) {
         this.prepared = true;
@@ -211,7 +223,9 @@ public class WarDayState extends SavedData {
         this.defenderTeam = defenderTeam;
         this.attackerTeam = attackerTeam;
         this.copiedNexusPos = copiedNexusPos;
-        this.attackerSpawnPos = attackerSpawnPos;
+        this.attackerSpawnPositions.clear();
+        this.attackerSpawnPositions.addAll(attackerSpawnPositions);
+        this.attackerSpawnPos = this.attackerSpawnPositions.isEmpty() ? null : this.attackerSpawnPositions.getFirst();
         this.terrainGenerationSequence++;
         this.preparedEntityTemplates.clear();
         entityTemplates.forEach(template -> this.preparedEntityTemplates.add(template.copy()));
@@ -222,6 +236,7 @@ public class WarDayState extends SavedData {
         this.prepared = false;
         this.copiedNexusPos = null;
         this.attackerSpawnPos = null;
+        this.attackerSpawnPositions.clear();
         this.preparedEntityTemplates.clear();
         setDirty();
     }
@@ -266,6 +281,7 @@ public class WarDayState extends SavedData {
         this.attackerParticipants.addAll(attackerParticipants);
         deathCounts.clear();
         pendingRespawnTicks.clear();
+        respawnCornerChoices.clear();
         setDirty();
     }
 
@@ -331,7 +347,24 @@ public class WarDayState extends SavedData {
     }
 
     public void removePendingRespawn(UUID playerId) {
-        if (pendingRespawnTicks.remove(playerId) != null) {
+        boolean changed = pendingRespawnTicks.remove(playerId) != null;
+        changed |= respawnCornerChoices.remove(playerId) != null;
+        if (changed) {
+            setDirty();
+        }
+    }
+
+    public void setRespawnCornerChoice(UUID playerId, int cornerIndex) {
+        respawnCornerChoices.put(playerId, cornerIndex);
+        setDirty();
+    }
+
+    public Optional<Integer> respawnCornerChoice(UUID playerId) {
+        return Optional.ofNullable(respawnCornerChoices.get(playerId));
+    }
+
+    public void clearRespawnCornerChoice(UUID playerId) {
+        if (respawnCornerChoices.remove(playerId) != null) {
             setDirty();
         }
     }
@@ -347,6 +380,7 @@ public class WarDayState extends SavedData {
         this.victoryActor = victoryActor == null ? "" : victoryActor;
         deathCounts.clear();
         pendingRespawnTicks.clear();
+        respawnCornerChoices.clear();
         setDirty();
         return true;
     }
@@ -369,6 +403,7 @@ public class WarDayState extends SavedData {
         attackerParticipants.clear();
         deathCounts.clear();
         pendingRespawnTicks.clear();
+        respawnCornerChoices.clear();
         setDirty();
     }
 
@@ -408,6 +443,14 @@ public class WarDayState extends SavedData {
 
     public Optional<BlockPos> attackerSpawnPos() {
         return Optional.ofNullable(attackerSpawnPos);
+    }
+
+    public List<BlockPos> attackerSpawnPositions() {
+        return List.copyOf(attackerSpawnPositions);
+    }
+
+    public Optional<Integer> deathCount(UUID playerId) {
+        return Optional.ofNullable(deathCounts.get(playerId));
     }
 
     public long terrainGenerationSequence() {
