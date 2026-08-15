@@ -218,6 +218,14 @@ public class WarDayState extends SavedData {
         setDirty();
     }
 
+    public void invalidatePrepared() {
+        this.prepared = false;
+        this.copiedNexusPos = null;
+        this.attackerSpawnPos = null;
+        this.preparedEntityTemplates.clear();
+        setDirty();
+    }
+
     public List<CompoundTag> preparedEntityTemplates() {
         return preparedEntityTemplates.stream().map(CompoundTag::copy).toList();
     }

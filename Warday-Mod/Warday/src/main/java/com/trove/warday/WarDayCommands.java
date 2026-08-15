@@ -139,6 +139,8 @@ public class WarDayCommands {
     private static final ResourceLocation RAPID_BREAK_PENALTY_ID = ResourceLocation.fromNamespaceAndPath(WarDayMod.MODID, "rapid_break_penalty");
     private static final int ROSTER_PLAYERS_PER_TEAM_PAGE = 6;
     private static final long ROSTER_PAGE_TICKS = 100L;
+    private static final long PREPARATION_TICK_BUDGET_NANOS = 10_000_000L;
+    private static final int PREPARATION_MAX_STEPS_PER_TICK = 65_536;
     private static final SuggestionProvider<CommandSourceStack> TEAM_NAME_SUGGESTIONS = WarDayCommands::suggestTeamNames;
     private static final Map<UUID, PendingRespawn> PENDING_RESPAWNS = new HashMap<>();
     private static final Map<UUID, Integer> DEATH_COUNTS = new HashMap<>();
@@ -151,6 +153,7 @@ public class WarDayCommands {
     private static long lastBossBarSeconds = Long.MIN_VALUE;
     private static MinecraftServer rosterScoreboardServer;
     private static String lastRosterSignature = "";
+    private PreparationJob preparationJob;
 
     @SubscribeEvent
     public void registerCommands(RegisterCommandsEvent event) {
@@ -174,7 +177,11 @@ public class WarDayCommands {
                 .then(Commands.literal("prepare")
                         .executes(context -> preparePreview(context.getSource()))
                         .then(Commands.literal("confirm")
-                                .executes(context -> prepareConfirm(context.getSource()))))
+                                .executes(context -> prepareConfirm(context.getSource())))
+                        .then(Commands.literal("status")
+                                .executes(context -> preparationStatus(context.getSource())))
+                        .then(Commands.literal("cancel")
+                                .executes(context -> cancelPreparation(context.getSource()))))
                 .then(Commands.literal("team1")
                         .then(Commands.argument("name", StringArgumentType.greedyString())
                                 .suggests(TEAM_NAME_SUGGESTIONS)
@@ -199,6 +206,11 @@ public class WarDayCommands {
             String label,
             String name
     ) {
+        if (preparationJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "Team configuration cannot change while preparation is running. Cancel or finish preparation first."));
+            return 0;
+        }
         String trimmed = name.trim();
         if (trimmed.isEmpty()) {
             source.sendFailure(message(ChatFormatting.RED, label + " name cannot be empty."));
@@ -323,164 +335,94 @@ public class WarDayCommands {
     }
 
     private int preparePreview(CommandSourceStack source) {
-        Optional<ResolvedBases> resolved = resolveBases(source);
-        if (resolved.isEmpty()) {
+        if (preparationJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "A War Day preparation job is already running. Use /warday prepare status or /warday prepare cancel."));
             return 0;
         }
 
-        ResolvedBases bases = resolved.get();
+        Optional<PreparationContext> contextResult = resolvePreparationContext(source);
+        if (contextResult.isEmpty()) {
+            return 0;
+        }
+
+        PreparationContext context = contextResult.get();
+        int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+        int terrainChunks = terrainWindowChunkCount(halfSize);
         source.sendSuccess(() -> message(ChatFormatting.AQUA, "War Day prepare preview only. No blocks were copied."), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY, "Target dimension: " + WarDayConfig.WAR_DAY_DIMENSION.get()), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "Generated terrain fills the arena; the defender base occupies one corner and the attacker spawns in the diagonal opposite corner."), false);
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Fresh terrain generation " + (bases.attackerArea().generationSequence() + 1)
-                        + " will use a continuous " + biomeName(bases.attackerArea().biome()) + " source area."), false);
+                "Fresh terrain generation " + (context.generationSequence() + 1)
+                        + " will search for a continuous " + biomeName(context.arenaBiome()) + " source area."), false);
 
-        reportPlacementPlan(source, PlacementPlan.from(bases.teamA()));
-        reportPlacementPlan(source, PlacementPlan.from(bases.attackerArea()));
+        reportPlacementPlan(source, context.defenderPlan());
+        source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                "- generated terrain coverage: complete " + (halfSize * 2) + "x" + (halfSize * 2)
+                        + " arena using " + terrainChunks + " remote source chunks"), false);
+        source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                "- preparation execution: biome search, chunk generation, clearing, and copying run in bounded batches across server ticks"), false);
 
         source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                "Run /warday prepare confirm to generate the battlefield and copy the defender base into its corner."), false);
+                "Run /warday prepare confirm to start the background preparation job, then /warday prepare status for progress."), false);
         return 1;
     }
 
     private int prepareConfirm(CommandSourceStack source) {
+        if (preparationJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "A War Day preparation job is already running. Use /warday prepare status or /warday prepare cancel."));
+            return 0;
+        }
+
         WarDayState state = WarDayState.get(source.getServer());
         if (state.isActive()) {
             source.sendFailure(message(ChatFormatting.RED, "War Day cannot be prepared while a match is active."));
             return 0;
         }
 
-        Optional<ResolvedBases> resolved = resolveBases(source);
-        if (resolved.isEmpty()) {
+        Optional<PreparationContext> contextResult = resolvePreparationContext(source);
+        if (contextResult.isEmpty()) {
             return 0;
         }
 
-        Optional<ResourceKey<Level>> dimensionKey = warDayDimensionKey(source);
-        if (dimensionKey.isEmpty()) {
-            return 0;
-        }
-
-        ServerLevel targetLevel = source.getServer().getLevel(dimensionKey.get());
+        PreparationContext context = contextResult.get();
+        ServerLevel targetLevel = source.getServer().getLevel(context.targetDimension());
         if (targetLevel == null) {
             source.sendFailure(message(ChatFormatting.RED, "War Day dimension is not loaded: " + WarDayConfig.WAR_DAY_DIMENSION.get()));
             source.sendFailure(message(ChatFormatting.RED, "Restart the server after adding this mod jar so the bundled dimension data can load."));
             return 0;
         }
 
-        ResolvedBases bases = resolved.get();
-        ServerLevel defenderSourceLevel = source.getServer().getLevel(bases.teamA().dimension());
-        if (defenderSourceLevel == null) {
-            source.sendFailure(message(ChatFormatting.RED, "Defender source dimension is not loaded: " + bases.teamA().dimension().location()));
+        preparationJob = new PreparationJob(source, context, targetLevel);
+        source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                "War Day preparation started. Work is limited per server tick; use /warday prepare status for progress or /warday prepare cancel."), true);
+        return 1;
+    }
+
+    private int preparationStatus(CommandSourceStack source) {
+        if (preparationJob == null) {
+            source.sendSuccess(() -> message(ChatFormatting.GRAY, "No War Day preparation job is running."), false);
             return 0;
         }
-        Holder<Biome> arenaBiome = bases.attackerArea().biome();
+        preparationJob.reportStatus(source);
+        return 1;
+    }
 
-        PlacementPlan teamAPlan = PlacementPlan.from(bases.teamA());
-        PlacementPlan attackerPlan = PlacementPlan.from(bases.attackerArea());
-        ServerLevel attackerSourceLevel = defenderSourceLevel;
-
-        CopyCheck teamACheck = checkDestinationEmpty(defenderSourceLevel, targetLevel, teamAPlan);
-        reportCopyCheck(source, bases.teamA().team().getName().getString(), teamACheck);
-        CopyCheck attackerCheck = checkDestinationEmpty(attackerSourceLevel, targetLevel, attackerPlan);
-        reportCopyCheck(source, "Generated battlefield terrain", attackerCheck);
-
-        if (!teamACheck.passed() || !attackerCheck.passed()) {
-            source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                    "Destination conflicts found; clearing the bounded War Day arena before paste."), true);
-        }
-
-        int arenaWiped = wipeDestinationArena(targetLevel);
-        int arenaDecorationsCleared = clearDestinationArenaDecorativeEntities(targetLevel);
-        source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                "Cleared " + arenaWiped + " blocks and " + arenaDecorationsCleared
-                        + " hanging entities from the bounded arena so repeated prepares cannot leave stale terrain."), true);
-
-        CopyResult attackerResult = copyBase(attackerSourceLevel, targetLevel, attackerPlan);
-        EntityCopyResult attackerEntityResult = copyDecorativeEntities(attackerSourceLevel, targetLevel, attackerPlan);
-        source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Generated fresh " + biomeName(arenaBiome) + " battlefield terrain #"
-                        + (bases.attackerArea().generationSequence() + 1) + ": " + attackerResult.blocksCopied()
-                        + " blocks, " + attackerResult.blockEntitiesCopied() + " block entities, "
-                        + attackerResult.containersCleared() + " containers cleared, "
-                        + attackerEntityResult.entitiesCopied() + " decorative entities, "
-                        + attackerEntityResult.itemFramesCleared() + " item frames cleared, "
-                        + attackerEntityResult.entitiesFailed() + " decorative entities failed validation/copy."), true);
-
-        int teamAWiped = wipeDestinationArea(defenderSourceLevel, targetLevel, teamAPlan);
-        int teamADecorationsCleared = clearDestinationDecorativeEntities(targetLevel, teamAPlan);
-        source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                "Cleared " + teamAWiped + " defender overlay blocks and " + teamADecorationsCleared
-                        + " background hanging entities so defender air and structures win all overlaps."), true);
-        CopyResult teamAResult = copyBase(defenderSourceLevel, targetLevel, teamAPlan);
-        EntityCopyResult teamAEntityResult = copyDecorativeEntities(defenderSourceLevel, targetLevel, teamAPlan);
-        source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Copied " + bases.teamA().team().getName().getString() + ": " + teamAResult.blocksCopied()
-                        + " blocks, " + teamAResult.blockEntitiesCopied() + " block entities, "
-                        + teamAResult.containersCleared() + " containers cleared, "
-                        + teamAEntityResult.entitiesCopied() + " decorative entities, "
-                        + teamAEntityResult.itemFramesCleared() + " item frames cleared, "
-                        + teamAEntityResult.entitiesFailed() + " decorative entities failed validation/copy."), true);
-        int biomeChunksUpdated = applyArenaBiome(targetLevel, arenaBiome);
-        source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Matched the complete arena biome to " + biomeName(arenaBiome)
-                        + " across " + biomeChunksUpdated + " intersecting chunks."), true);
-        Optional<BlockPos> safeAttackerSpawn = findSafeSpawnPos(targetLevel, attackerPlan);
-        if (safeAttackerSpawn.isEmpty()) {
-            source.sendFailure(message(ChatFormatting.RED,
-                    "No safe two-block-tall attacker landing spot was found near the opposite arena corner at "
-                            + formatPos(bases.attackerArea().spawnTargetPos())
-                            + ". Rerun preparation after checking the generated terrain and configured arena size."));
+    private int cancelPreparation(CommandSourceStack source) {
+        if (preparationJob == null) {
+            source.sendFailure(message(ChatFormatting.GRAY, "No War Day preparation job is running."));
             return 0;
         }
-        BlockPos spawnPos = safeAttackerSpawn.get();
-        source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Validated automatic attacker spawn at " + formatPos(spawnPos)
-                        + " in the corner opposite the defender base."), true);
-        int entityLimit = WarDayConfig.MAX_PREPARED_ENTITIES.getAsInt();
-        Set<UUID> capturedEntityRoots = new HashSet<>();
-        EntityTemplateCapture defenderEntityCapture = capturePreparedEntityTemplates(
-                defenderSourceLevel,
-                targetLevel,
-                teamAPlan,
-                entityLimit,
-                capturedEntityRoots
-        );
-        List<CompoundTag> preparedEntityTemplates = new ArrayList<>(defenderEntityCapture.templates());
-        int remainingEntities = entityLimit - defenderEntityCapture.entityCount();
-        EntityTemplateCapture attackerEntityCapture = capturePreparedEntityTemplates(
-                attackerSourceLevel,
-                targetLevel,
-                attackerPlan,
-                Math.max(0, remainingEntities),
-                capturedEntityRoots
-        );
-        preparedEntityTemplates.addAll(attackerEntityCapture.templates());
-        int preparedEntityCount = defenderEntityCapture.entityCount() + attackerEntityCapture.entityCount();
-        int entityTemplatesSkipped = defenderEntityCapture.skippedCount() + attackerEntityCapture.skippedCount();
-
-        BlockPos copiedNexusPos = teamAPlan.targetPos(bases.teamA().nexus().pos());
-        buildNexusShell(targetLevel, copiedNexusPos);
-        state.markPrepared(
-                WarDayConfig.WAR_DAY_DIMENSION.get(),
-                bases.teamA().team().getName().getString(),
-                bases.attackerTeam().map(team -> team.getName().getString()).orElse(""),
-                copiedNexusPos,
-                safeAttackerSpawn.orElse(null),
-                preparedEntityTemplates
-        );
-        source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Built protected nexus shell at " + formatPos(copiedNexusPos) + "."), true);
+        boolean worldChanged = preparationJob.worldChanged();
+        preparationJob = null;
         source.sendSuccess(() -> message(
-                entityTemplatesSkipped == 0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW,
-                "Prepared " + preparedEntityCount + " non-player entities in " + preparedEntityTemplates.size()
-                        + " entity groups for match-time cloning; skipped " + entityTemplatesSkipped + "."
+                worldChanged ? ChatFormatting.YELLOW : ChatFormatting.GREEN,
+                worldChanged
+                        ? "War Day preparation cancelled. The prepared flag remains cleared because the arena was partially changed; rerun /warday prepare confirm."
+                        : "War Day preparation cancelled before the arena was changed."
         ), true);
-        source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "War Day preparation complete. Arena biome " + biomeName(arenaBiome)
-                        + ", generated terrain, opposite-corner attacker spawn, nexus, and entity templates are ready. Next: /warday start.")
-                .withStyle(ChatFormatting.BOLD), true);
         return 1;
     }
 
@@ -500,6 +442,9 @@ public class WarDayCommands {
                 "Active: " + state.isActive()), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "Next fresh terrain generation: " + (state.terrainGenerationSequence() + 1)), false);
+        if (preparationJob != null) {
+            preparationJob.reportStatus(source);
+        }
 
         if (state.isPrepared()) {
             source.sendSuccess(() -> message(ChatFormatting.GRAY, "Saved dimension: " + state.warDayDimension()), false);
@@ -529,10 +474,10 @@ public class WarDayCommands {
             if (state.isActive()) {
                 source.sendSuccess(() -> message(ChatFormatting.YELLOW,
                         "Operator override: /warday end immediately restores players"), false);
-            } else {
+            } else if (preparationJob == null) {
                 source.sendSuccess(() -> message(ChatFormatting.GREEN, "Next command: /warday start"), false);
             }
-        } else {
+        } else if (preparationJob == null) {
             source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Next command: /warday prepare confirm"), false);
         }
 
@@ -540,6 +485,11 @@ public class WarDayCommands {
     }
 
     private int start(CommandSourceStack source) {
+        if (preparationJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "War Day preparation is still running. Use /warday prepare status or /warday prepare cancel."));
+            return 0;
+        }
         WarDayState state = WarDayState.get(source.getServer());
         if (!state.isPrepared()) {
             source.sendFailure(message(ChatFormatting.RED, "War Day is not prepared. Run /warday prepare confirm first."));
@@ -839,12 +789,19 @@ public class WarDayCommands {
 
     @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
+        preparationJob = null;
         clearRapidBreakPenalties(event.getServer());
         DIG_HISTORY.clear();
     }
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
+        if (preparationJob != null) {
+            if (preparationJob.tick(event.getServer())) {
+                preparationJob = null;
+            }
+        }
+
         WarDayState state = WarDayState.get(event.getServer());
         if (!state.isActive()) {
             PENDING_RESPAWNS.clear();
@@ -2654,28 +2611,28 @@ public class WarDayCommands {
                 player, respawn.matchBlock(), respawn.teamMarker(), MATCH_BLOCK_TARGET_COUNT);
     }
 
-    private Optional<ResolvedBases> resolveBases(CommandSourceStack source) {
+    private Optional<PreparationContext> resolvePreparationContext(CommandSourceStack source) {
         Optional<ScanContext> scanContext = createScanContext(source);
         if (scanContext.isEmpty()) {
             return Optional.empty();
         }
 
         ScanContext context = scanContext.get();
-        TeamValidation teamAValidation = validateTeamMarkers(context.teamA(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
-
-        if (!teamAValidation.passed()) {
-            reportTeamValidation(source, teamAValidation);
+        TeamValidation validation = validateTeamMarkers(
+                context.teamA(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
+        if (!validation.passed()) {
+            reportTeamValidation(source, validation);
             source.sendFailure(message(ChatFormatting.RED,
                     "Prepare requires the defender nexus and forward marker to pass validation."));
             return Optional.empty();
         }
 
-        BaseArea teamA = BaseArea.from(teamAValidation, context.chunkManager());
+        BaseArea defenderBase = BaseArea.from(validation, context.chunkManager());
         Optional<ResourceKey<Level>> targetDimension = warDayDimensionKey(source);
         if (targetDimension.isEmpty()) {
             return Optional.empty();
         }
-        Optional<PlacementPlan> defenderPlan = PlacementPlan.defenderCorner(teamA);
+        Optional<PlacementPlan> defenderPlan = PlacementPlan.defenderCorner(defenderBase);
         if (defenderPlan.isEmpty()) {
             int arenaSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2;
             source.sendFailure(message(ChatFormatting.RED,
@@ -2683,25 +2640,35 @@ public class WarDayCommands {
                             + " arena with an opposite attacker corner."));
             return Optional.empty();
         }
-        long generationSequence = WarDayState.get(source.getServer()).terrainGenerationSequence();
-        Optional<AttackerArea> attackerArea = AttackerArea.from(teamA, context.level(), generationSequence);
-        if (attackerArea.isEmpty()) {
-            source.sendFailure(message(ChatFormatting.RED,
-                    "Could not find a continuous " + (WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2) + "x"
-                            + (WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2) + " remote terrain area matching biome "
-                            + biomeName(context.level().getBiome(teamA.nexus().pos())) + " after "
-                            + WarDayConfig.BIOME_TERRAIN_SEARCH_ATTEMPTS.getAsInt()
-                            + " bounded attempts. Increase the biome terrain search settings or choose a larger biome."));
-            return Optional.empty();
-        }
-        boolean teamAWithinLimits = reportAndCheckGuardrails(source, teamA);
-        boolean attackerWithinLimits = reportAndCheckAttackerGuardrails(source, attackerArea.get());
-
-        if (!teamAWithinLimits || !attackerWithinLimits) {
+        if (!reportAndCheckGuardrails(source, defenderBase)) {
             return Optional.empty();
         }
 
-        return Optional.of(new ResolvedBases(teamA, attackerArea.get(), context.teamB()));
+        int terrainChunks = terrainWindowChunkCount(WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt());
+        int maxTerrainChunks = WarDayConfig.MAX_ATTACKER_TERRAIN_CHUNKS.getAsInt();
+        ChatFormatting terrainColor = terrainChunks <= maxTerrainChunks ? ChatFormatting.GREEN : ChatFormatting.RED;
+        source.sendSuccess(() -> message(terrainColor,
+                "Generated-terrain guardrail: exact arena coverage uses " + terrainChunks + "/"
+                        + maxTerrainChunks + " remote biome-matched source chunks"), false);
+        if (terrainChunks > maxTerrainChunks) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new PreparationContext(
+                defenderBase,
+                defenderPlan.get(),
+                context.teamB(),
+                context.level(),
+                targetDimension.get(),
+                context.level().getBiome(defenderBase.nexus().pos()),
+                WarDayState.get(source.getServer()).terrainGenerationSequence()
+        ));
+    }
+
+    private static int terrainWindowChunkCount(int halfSize) {
+        WarDayAttackerTerrainPlan.SourceWindow window = WarDayAttackerTerrainPlan.sourceWindow(8, 8, 0, 0, halfSize);
+        return (window.maxChunkX() - window.minChunkX() + 1)
+                * (window.maxChunkZ() - window.minChunkZ() + 1);
     }
 
     private Optional<ResourceKey<Level>> warDayDimensionKey(CommandSourceStack source) {
@@ -3827,21 +3794,14 @@ public class WarDayCommands {
             Holder<Biome> biome,
             long generationSequence
     ) {
-        private static Optional<AttackerArea> from(
+        private static AttackerArea fromAnchor(
                 BaseArea defenderBase,
-                ServerLevel sourceLevel,
+                Holder<Biome> biome,
+                BlockPos sourceAnchor,
                 long generationSequence
         ) {
             int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
-            int spawnEdge = WarDayAttackerTerrainPlan.edgeTargetOffset(
-                    halfSize, MATCH_BORDER_SPAWN_MARGIN);
-            Holder<Biome> biome = sourceLevel.getBiome(defenderBase.nexus().pos());
-            Optional<BlockPos> sourceAnchorResult = findMatchingTerrainAnchor(
-                    sourceLevel, defenderBase.nexus().pos(), biome, halfSize, generationSequence);
-            if (sourceAnchorResult.isEmpty()) {
-                return Optional.empty();
-            }
-            BlockPos sourceAnchor = sourceAnchorResult.get();
+            int spawnEdge = WarDayAttackerTerrainPlan.edgeTargetOffset(halfSize, MATCH_BORDER_SPAWN_MARGIN);
             WarDayAttackerTerrainPlan.SourceWindow window = WarDayAttackerTerrainPlan.sourceWindow(
                     sourceAnchor.getX(), sourceAnchor.getZ(), 0, 0, halfSize);
             Set<ChunkDimPos> cluster = new HashSet<>();
@@ -3851,7 +3811,7 @@ public class WarDayCommands {
                 }
             }
             Set<ChunkDimPos> immutableCluster = Set.copyOf(cluster);
-            return Optional.of(new AttackerArea(
+            return new AttackerArea(
                     immutableCluster,
                     ClusterBounds.from(immutableCluster),
                     defenderBase.dimension(),
@@ -3859,88 +3819,7 @@ public class WarDayCommands {
                     new BlockPos(-spawnEdge, WarDayConfig.WAR_DAY_BASE_Y.getAsInt(), spawnEdge),
                     biome,
                     generationSequence
-            ));
-        }
-
-        private static Optional<BlockPos> findMatchingTerrainAnchor(
-                ServerLevel sourceLevel,
-                BlockPos defenderNexus,
-                Holder<Biome> biome,
-                int halfSize,
-                long generationSequence
-        ) {
-            ChunkGenerator generator = sourceLevel.getChunkSource().getGenerator();
-            BiomeSource biomeSource = generator.getBiomeSource();
-            var randomState = sourceLevel.getChunkSource().randomState();
-            var sampler = randomState.sampler();
-            int searchRadius = WarDayConfig.BIOME_TERRAIN_SEARCH_RADIUS_BLOCKS.getAsInt();
-            int attempts = WarDayConfig.BIOME_TERRAIN_SEARCH_ATTEMPTS.getAsInt();
-            int samplesPerAttempt = Math.max(128, Math.min(2048, searchRadius / 8));
-            int generatedNexusSurface = generator.getBaseHeight(
-                    defenderNexus.getX(), defenderNexus.getZ(), Heightmap.Types.WORLD_SURFACE_WG,
-                    sourceLevel, randomState);
-            boolean sampleGeneratedSurface = !sourceLevel.dimensionType().hasCeiling()
-                    && defenderNexus.getY() >= generatedNexusSurface - 16;
-
-            for (int attempt = 0; attempt < attempts; attempt++) {
-                WarDayAttackerTerrainPlan.SourceAnchor origin =
-                        WarDayAttackerTerrainPlan.generatedTerrainAnchor(
-                                defenderNexus.getX(), defenderNexus.getZ(), generationSequence, attempt);
-                long randomSeed = ChunkPos.asLong(Math.floorDiv(origin.x(), 16), Math.floorDiv(origin.z(), 16))
-                        ^ generationSequence ^ ((long) attempt << 32);
-                RandomSource random = RandomSource.create(randomSeed);
-                for (int sample = 0; sample < samplesPerAttempt; sample++) {
-                    int candidateX = origin.x() + random.nextInt(searchRadius * 2 + 1) - searchRadius;
-                    int candidateZ = origin.z() + random.nextInt(searchRadius * 2 + 1) - searchRadius;
-                    int anchorX = Math.floorDiv(candidateX, 16) * 16 + 8;
-                    int anchorZ = Math.floorDiv(candidateZ, 16) * 16 + 8;
-                    Holder<Biome> centerBiome = terrainLayerBiome(
-                            sourceLevel, generator, biomeSource, randomState, sampler,
-                            anchorX, anchorZ, defenderNexus.getY(), sampleGeneratedSurface);
-                    if (!centerBiome.is(biome)) {
-                        continue;
-                    }
-
-                    WarDayAttackerTerrainPlan.SourceWindow window = WarDayAttackerTerrainPlan.sourceWindow(
-                            anchorX, anchorZ, 0, 0, halfSize);
-                    if (windowMatchesBiome(
-                            sourceLevel, generator, biomeSource, randomState, sampler, biome,
-                            defenderNexus.getY(), sampleGeneratedSurface, window)) {
-                        return Optional.of(new BlockPos(anchorX, defenderNexus.getY(), anchorZ));
-                    }
-                }
-            }
-            return Optional.empty();
-        }
-
-        private static boolean windowMatchesBiome(
-                ServerLevel sourceLevel,
-                ChunkGenerator generator,
-                BiomeSource biomeSource,
-                net.minecraft.world.level.levelgen.RandomState randomState,
-                net.minecraft.world.level.biome.Climate.Sampler sampler,
-                Holder<Biome> biome,
-                int defenderY,
-                boolean sampleGeneratedSurface,
-                WarDayAttackerTerrainPlan.SourceWindow window
-        ) {
-            int minQuartX = QuartPos.fromBlock(window.minSourceX());
-            int maxQuartX = QuartPos.fromBlock(window.maxSourceX());
-            int minQuartZ = QuartPos.fromBlock(window.minSourceZ());
-            int maxQuartZ = QuartPos.fromBlock(window.maxSourceZ());
-            for (int quartX = minQuartX; quartX <= maxQuartX; quartX++) {
-                for (int quartZ = minQuartZ; quartZ <= maxQuartZ; quartZ++) {
-                    int blockX = QuartPos.toBlock(quartX) + 2;
-                    int blockZ = QuartPos.toBlock(quartZ) + 2;
-                    Holder<Biome> candidate = terrainLayerBiome(
-                            sourceLevel, generator, biomeSource, randomState, sampler,
-                            blockX, blockZ, defenderY, sampleGeneratedSurface);
-                    if (!candidate.is(biome)) {
-                        return false;
-                    }
-                }
-            }
-            return true;
+            );
         }
 
         private static Holder<Biome> terrainLayerBiome(
@@ -3965,7 +3844,743 @@ public class WarDayCommands {
         }
     }
 
-    private record ResolvedBases(BaseArea teamA, AttackerArea attackerArea, Optional<Team> attackerTeam) {
+    private record PreparationContext(
+            BaseArea defenderBase,
+            PlacementPlan defenderPlan,
+            Optional<Team> attackerTeam,
+            ServerLevel sourceLevel,
+            ResourceKey<Level> targetDimension,
+            Holder<Biome> arenaBiome,
+            long generationSequence
+    ) {
+    }
+
+    private final class PreparationJob {
+        private final CommandSourceStack source;
+        private final PreparationContext context;
+        private final ServerLevel sourceLevel;
+        private final ServerLevel targetLevel;
+        private final ChunkGenerator generator;
+        private final BiomeSource biomeSource;
+        private final net.minecraft.world.level.levelgen.RandomState randomState;
+        private final net.minecraft.world.level.biome.Climate.Sampler sampler;
+        private final boolean sampleGeneratedSurface;
+        private final int searchRadius;
+        private final int searchAttempts;
+        private final int samplesPerAttempt;
+        private final Set<Long> testedCandidateChunks = new HashSet<>();
+        private PreparationPhase phase = PreparationPhase.SEARCHING_TERRAIN;
+        private int searchAttempt;
+        private int searchSample;
+        private WarDayAttackerTerrainPlan.SourceAnchor searchOrigin;
+        private RandomSource searchRandom;
+        private BlockPos candidateAnchor;
+        private WarDayBiomeSearchGrid.Cursor candidateGrid;
+        private AttackerArea attackerArea;
+        private PlacementPlan attackerPlan;
+        private List<ChunkDimPos> sourceChunks = List.of();
+        private List<ChunkPos> targetChunks = List.of();
+        private int chunkIndex;
+        private PlanBlockCursor blockCursor;
+        private ArenaBlockCursor arenaCursor;
+        private int destinationBlocksChecked;
+        private int arenaBlocksWiped;
+        private int arenaDecorationsCleared;
+        private int defenderBlocksWiped;
+        private final MutableCopyResult terrainCopy = new MutableCopyResult();
+        private final MutableCopyResult defenderCopy = new MutableCopyResult();
+        private final List<LevelChunk> biomeChunks = new ArrayList<>();
+        private boolean worldChanged;
+        private boolean finished;
+
+        private PreparationJob(CommandSourceStack source, PreparationContext context, ServerLevel targetLevel) {
+            this.source = source;
+            this.context = context;
+            this.sourceLevel = context.sourceLevel();
+            this.targetLevel = targetLevel;
+            this.generator = sourceLevel.getChunkSource().getGenerator();
+            this.biomeSource = generator.getBiomeSource();
+            this.randomState = sourceLevel.getChunkSource().randomState();
+            this.sampler = randomState.sampler();
+            this.searchRadius = WarDayConfig.BIOME_TERRAIN_SEARCH_RADIUS_BLOCKS.getAsInt();
+            this.searchAttempts = WarDayConfig.BIOME_TERRAIN_SEARCH_ATTEMPTS.getAsInt();
+            this.samplesPerAttempt = Math.max(128, Math.min(2048, searchRadius / 8));
+            BlockPos nexus = context.defenderBase().nexus().pos();
+            int generatedNexusSurface = generator.getBaseHeight(
+                    nexus.getX(), nexus.getZ(), Heightmap.Types.WORLD_SURFACE_WG, sourceLevel, randomState);
+            this.sampleGeneratedSurface = !sourceLevel.dimensionType().hasCeiling()
+                    && nexus.getY() >= generatedNexusSurface - 16;
+            announcePhase("Searching for a continuous " + biomeName(context.arenaBiome())
+                    + " terrain window in bounded batches.");
+        }
+
+        private boolean tick(MinecraftServer server) {
+            if (finished) {
+                return true;
+            }
+            if (server != source.getServer()) {
+                fail("Preparation stopped because the server instance changed.", null);
+                return true;
+            }
+            if (WarDayState.get(server).isActive()) {
+                fail("Preparation stopped because a War Day match became active.", null);
+                return true;
+            }
+
+            long deadline = System.nanoTime() + PREPARATION_TICK_BUDGET_NANOS;
+            int steps = 0;
+            try {
+                boolean continueThisTick = true;
+                while (!finished && continueThisTick && steps < PREPARATION_MAX_STEPS_PER_TICK) {
+                    continueThisTick = step();
+                    steps++;
+                    if ((phase == PreparationPhase.SEARCHING_TERRAIN || (steps & 63) == 0)
+                            && System.nanoTime() >= deadline) {
+                        break;
+                    }
+                }
+            } catch (RuntimeException exception) {
+                fail("Preparation failed during " + phase.label + ". Check the server log; the prepared flag remains cleared if world changes began.", exception);
+            }
+            return finished;
+        }
+
+        private boolean step() {
+            return switch (phase) {
+                case SEARCHING_TERRAIN -> stepTerrainSearch();
+                case LOADING_SOURCE_CHUNKS -> stepLoadSourceChunk();
+                case LOADING_TARGET_CHUNKS -> stepLoadTargetChunk();
+                case CHECKING_DEFENDER_DESTINATION -> stepDestinationCheck(context.defenderPlan(), true);
+                case CHECKING_TERRAIN_DESTINATION -> stepDestinationCheck(attackerPlan, false);
+                case CLEARING_ARENA -> stepClearArena();
+                case COPYING_TERRAIN -> stepCopy(attackerPlan, terrainCopy, true);
+                case CLEARING_DEFENDER_OVERLAY -> stepClearDefenderOverlay();
+                case COPYING_DEFENDER -> stepCopy(context.defenderPlan(), defenderCopy, false);
+                case APPLYING_BIOME -> stepApplyBiome();
+                case FINALIZING -> stepFinalize();
+            };
+        }
+
+        private boolean stepTerrainSearch() {
+            if (candidateGrid != null) {
+                if (!candidateGrid.hasNext()) {
+                    completeTerrainSearch(candidateAnchor);
+                    return true;
+                }
+                WarDayBiomeSearchGrid.Sample sample = candidateGrid.next();
+                Holder<Biome> candidate = AttackerArea.terrainLayerBiome(
+                        sourceLevel, generator, biomeSource, randomState, sampler,
+                        sample.blockX(), sample.blockZ(), context.defenderBase().nexus().pos().getY(), sampleGeneratedSurface);
+                if (!candidate.is(context.arenaBiome())) {
+                    candidateGrid = null;
+                    candidateAnchor = null;
+                } else if (!candidateGrid.hasNext()) {
+                    completeTerrainSearch(candidateAnchor);
+                }
+                return true;
+            }
+
+            if (searchAttempt >= searchAttempts) {
+                fail("Could not find a continuous " + (WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2) + "x"
+                        + (WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2) + " remote terrain area matching biome "
+                        + biomeName(context.arenaBiome()) + " after " + searchAttempts
+                        + " bounded attempts. The previous prepared arena was not changed.", null);
+                return false;
+            }
+
+            if (searchRandom == null) {
+                searchOrigin = WarDayAttackerTerrainPlan.generatedTerrainAnchor(
+                        context.defenderBase().nexus().pos().getX(),
+                        context.defenderBase().nexus().pos().getZ(),
+                        context.generationSequence(),
+                        searchAttempt
+                );
+                long randomSeed = ChunkPos.asLong(
+                        Math.floorDiv(searchOrigin.x(), 16), Math.floorDiv(searchOrigin.z(), 16))
+                        ^ context.generationSequence() ^ ((long) searchAttempt << 32);
+                searchRandom = RandomSource.create(randomSeed);
+                searchSample = 0;
+            }
+            if (searchSample >= samplesPerAttempt) {
+                searchAttempt++;
+                searchRandom = null;
+                return true;
+            }
+
+            int candidateX = searchOrigin.x() + searchRandom.nextInt(searchRadius * 2 + 1) - searchRadius;
+            int candidateZ = searchOrigin.z() + searchRandom.nextInt(searchRadius * 2 + 1) - searchRadius;
+            searchSample++;
+            int anchorX = Math.floorDiv(candidateX, 16) * 16 + 8;
+            int anchorZ = Math.floorDiv(candidateZ, 16) * 16 + 8;
+            long candidateChunk = ChunkPos.asLong(Math.floorDiv(anchorX, 16), Math.floorDiv(anchorZ, 16));
+            if (!testedCandidateChunks.add(candidateChunk)) {
+                return true;
+            }
+
+            Holder<Biome> centerBiome = AttackerArea.terrainLayerBiome(
+                    sourceLevel, generator, biomeSource, randomState, sampler,
+                    anchorX, anchorZ, context.defenderBase().nexus().pos().getY(), sampleGeneratedSurface);
+            if (!centerBiome.is(context.arenaBiome())) {
+                return true;
+            }
+
+            int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+            WarDayAttackerTerrainPlan.SourceWindow window = WarDayAttackerTerrainPlan.sourceWindow(
+                    anchorX, anchorZ, 0, 0, halfSize);
+            candidateAnchor = new BlockPos(anchorX, context.defenderBase().nexus().pos().getY(), anchorZ);
+            candidateGrid = WarDayBiomeSearchGrid.cursor(
+                    window.minSourceX(), window.maxSourceX(), window.minSourceZ(), window.maxSourceZ());
+            return true;
+        }
+
+        private void completeTerrainSearch(BlockPos sourceAnchor) {
+            attackerArea = AttackerArea.fromAnchor(
+                    context.defenderBase(), context.arenaBiome(), sourceAnchor, context.generationSequence());
+            attackerPlan = PlacementPlan.from(attackerArea);
+            if (!reportAndCheckAttackerGuardrails(source, attackerArea)) {
+                fail("Generated terrain exceeded its configured safety limit. The previous prepared arena was not changed.", null);
+                return;
+            }
+            sourceChunks = sortedChunks(attackerArea.cluster());
+            targetChunks = arenaChunks();
+            chunkIndex = 0;
+            phase = PreparationPhase.LOADING_SOURCE_CHUNKS;
+            announcePhase("Matched terrain at " + formatPos(sourceAnchor) + ". Loading " + sourceChunks.size()
+                    + " remote source chunks one bounded step at a time.");
+        }
+
+        private boolean stepLoadSourceChunk() {
+            if (chunkIndex >= sourceChunks.size()) {
+                chunkIndex = 0;
+                phase = PreparationPhase.LOADING_TARGET_CHUNKS;
+                announcePhase("Remote terrain loaded. Loading " + targetChunks.size() + " target arena chunks.");
+                return true;
+            }
+            ChunkDimPos chunk = sourceChunks.get(chunkIndex++);
+            sourceLevel.getChunk(chunk.x(), chunk.z());
+            return false;
+        }
+
+        private boolean stepLoadTargetChunk() {
+            if (chunkIndex >= targetChunks.size()) {
+                chunkIndex = 0;
+                phase = PreparationPhase.CHECKING_DEFENDER_DESTINATION;
+                blockCursor = new PlanBlockCursor(sourceLevel, context.defenderPlan(), true);
+                destinationBlocksChecked = 0;
+                announcePhase("Chunks loaded. Checking the defender destination before clearing.");
+                return true;
+            }
+            ChunkPos chunk = targetChunks.get(chunkIndex++);
+            targetLevel.getChunk(chunk.x, chunk.z);
+            return false;
+        }
+
+        private boolean stepDestinationCheck(PlacementPlan plan, boolean defender) {
+            if (!blockCursor.advance()) {
+                reportCopyCheck(source, defender ? context.defenderBase().team().getName().getString() : "Generated battlefield terrain",
+                        new CopyCheck(true, destinationBlocksChecked, 0, BlockPos.ZERO));
+                if (defender) {
+                    phase = PreparationPhase.CHECKING_TERRAIN_DESTINATION;
+                    blockCursor = new PlanBlockCursor(sourceLevel, attackerPlan, true);
+                    destinationBlocksChecked = 0;
+                    announcePhase("Defender destination is empty. Checking the generated-terrain destination.");
+                } else {
+                    beginArenaClearing();
+                }
+                return true;
+            }
+
+            BlockState sourceState = blockCursor.currentState();
+            if (sourceState.isAir()) {
+                return true;
+            }
+            BlockPos sourcePos = blockCursor.currentPos();
+            BlockPos targetPos = plan.targetPos(sourcePos);
+            if (!plan.containsTargetColumn(targetPos)
+                    || targetPos.getY() < targetLevel.getMinBuildHeight()
+                    || targetPos.getY() >= targetLevel.getMaxBuildHeight()) {
+                return true;
+            }
+            destinationBlocksChecked++;
+            if (!targetLevel.getBlockState(targetPos).isAir()) {
+                reportCopyCheck(source, defender ? context.defenderBase().team().getName().getString() : "Generated battlefield terrain",
+                        new CopyCheck(false, destinationBlocksChecked, 1, targetPos));
+                if (defender) {
+                    phase = PreparationPhase.CHECKING_TERRAIN_DESTINATION;
+                    blockCursor = new PlanBlockCursor(sourceLevel, attackerPlan, true);
+                    destinationBlocksChecked = 0;
+                    announcePhase("Checking the generated-terrain destination.");
+                } else {
+                    beginArenaClearing();
+                }
+            }
+            return true;
+        }
+
+        private void beginArenaClearing() {
+            WarDayState.get(source.getServer()).invalidatePrepared();
+            worldChanged = true;
+            arenaDecorationsCleared = clearDestinationArenaDecorativeEntities(targetLevel);
+            arenaCursor = new ArenaBlockCursor(targetLevel, true);
+            phase = PreparationPhase.CLEARING_ARENA;
+            announcePhase("Destination checks complete. Prepared state cleared; wiping the bounded target arena in batches.");
+        }
+
+        private boolean stepClearArena() {
+            if (!arenaCursor.advance()) {
+                source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                        "Cleared " + arenaBlocksWiped + " blocks and " + arenaDecorationsCleared
+                                + " hanging entities from the bounded arena."), true);
+                blockCursor = new PlanBlockCursor(sourceLevel, attackerPlan, true);
+                phase = PreparationPhase.COPYING_TERRAIN;
+                announcePhase("Arena cleared. Copying generated terrain in bounded batches.");
+                return true;
+            }
+            BlockState state = arenaCursor.currentState();
+            if (!state.isAir()) {
+                targetLevel.setBlock(arenaCursor.currentPos(), Blocks.AIR.defaultBlockState(), 3);
+                arenaBlocksWiped++;
+            }
+            return true;
+        }
+
+        private boolean stepCopy(PlacementPlan plan, MutableCopyResult result, boolean terrain) {
+            if (!blockCursor.advance()) {
+                EntityCopyResult entities = copyDecorativeEntities(sourceLevel, targetLevel, plan);
+                if (terrain) {
+                    source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                            "Generated fresh " + biomeName(context.arenaBiome()) + " battlefield terrain #"
+                                    + (context.generationSequence() + 1) + ": " + result.blocksCopied + " blocks, "
+                                    + result.blockEntitiesCopied + " block entities, " + result.containersCleared
+                                    + " containers cleared, " + entities.entitiesCopied() + " decorative entities, "
+                                    + entities.itemFramesCleared() + " item frames cleared, " + entities.entitiesFailed()
+                                    + " decorative entities failed validation/copy."), true);
+                    blockCursor = new PlanBlockCursor(sourceLevel, context.defenderPlan(), false);
+                    phase = PreparationPhase.CLEARING_DEFENDER_OVERLAY;
+                    announcePhase("Terrain copied. Clearing the defender claim overlay so defender air wins overlaps.");
+                } else {
+                    source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                            "Copied " + context.defenderBase().team().getName().getString() + ": " + result.blocksCopied
+                                    + " blocks, " + result.blockEntitiesCopied + " block entities, "
+                                    + result.containersCleared + " containers cleared, " + entities.entitiesCopied()
+                                    + " decorative entities, " + entities.itemFramesCleared() + " item frames cleared, "
+                                    + entities.entitiesFailed() + " decorative entities failed validation/copy."), true);
+                    chunkIndex = 0;
+                    phase = PreparationPhase.APPLYING_BIOME;
+                    announcePhase("Defender overlay copied. Applying the selected biome across target chunks.");
+                }
+                return true;
+            }
+
+            BlockState sourceState = blockCursor.currentState();
+            if (sourceState.isAir()) {
+                return true;
+            }
+            BlockPos sourcePos = blockCursor.currentPos();
+            BlockPos targetPos = plan.targetPos(sourcePos);
+            if (!plan.containsTargetColumn(targetPos)
+                    || targetPos.getY() < targetLevel.getMinBuildHeight()
+                    || targetPos.getY() >= targetLevel.getMaxBuildHeight()) {
+                return true;
+            }
+            targetLevel.setBlock(targetPos, plan.targetState(sourceState), 3);
+            result.blocksCopied++;
+            BlockEntity sourceBlockEntity = sourceLevel.getBlockEntity(sourcePos);
+            BlockEntity targetBlockEntity = targetLevel.getBlockEntity(targetPos);
+            if (sourceBlockEntity != null && targetBlockEntity != null) {
+                CompoundTag tag = sourceBlockEntity.saveWithFullMetadata(sourceLevel.registryAccess());
+                tag.putInt("x", targetPos.getX());
+                tag.putInt("y", targetPos.getY());
+                tag.putInt("z", targetPos.getZ());
+                targetBlockEntity.loadWithComponents(tag, targetLevel.registryAccess());
+                targetBlockEntity.setChanged();
+                result.blockEntitiesCopied++;
+                if (targetBlockEntity instanceof Container container) {
+                    container.clearContent();
+                    targetBlockEntity.setChanged();
+                    result.containersCleared++;
+                }
+            }
+            return true;
+        }
+
+        private boolean stepClearDefenderOverlay() {
+            if (!blockCursor.advance()) {
+                int decorations = clearDestinationDecorativeEntities(targetLevel, context.defenderPlan());
+                source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                        "Cleared " + defenderBlocksWiped + " defender overlay blocks and " + decorations
+                                + " background hanging entities."), true);
+                blockCursor = new PlanBlockCursor(sourceLevel, context.defenderPlan(), true);
+                phase = PreparationPhase.COPYING_DEFENDER;
+                announcePhase("Defender overlay cleared. Copying the rotated defender claim.");
+                return true;
+            }
+            BlockPos targetPos = context.defenderPlan().targetPos(blockCursor.currentPos());
+            if (context.defenderPlan().containsTargetColumn(targetPos)
+                    && targetPos.getY() >= targetLevel.getMinBuildHeight()
+                    && targetPos.getY() < targetLevel.getMaxBuildHeight()
+                    && !targetLevel.getBlockState(targetPos).isAir()) {
+                targetLevel.setBlock(targetPos, Blocks.AIR.defaultBlockState(), 3);
+                defenderBlocksWiped++;
+            }
+            return true;
+        }
+
+        private boolean stepApplyBiome() {
+            if (chunkIndex >= targetChunks.size()) {
+                for (int offset = 0; offset < biomeChunks.size(); offset += 16) {
+                    int end = Math.min(offset + 16, biomeChunks.size());
+                    ClientboundChunksBiomesPacket packet = ClientboundChunksBiomesPacket.forChunks(biomeChunks.subList(offset, end));
+                    for (ServerPlayer player : targetLevel.players()) {
+                        player.connection.send(packet);
+                    }
+                }
+                source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                        "Matched the complete arena biome to " + biomeName(context.arenaBiome())
+                                + " across " + biomeChunks.size() + " intersecting chunks."), true);
+                phase = PreparationPhase.FINALIZING;
+                announcePhase("Biome applied. Validating spawn and preparing entity templates.");
+                return true;
+            }
+            ChunkPos pos = targetChunks.get(chunkIndex++);
+            LevelChunk chunk = targetLevel.getChunk(pos.x, pos.z);
+            chunk.fillBiomesFromNoise((quartX, quartY, quartZ, ignoredSampler) -> context.arenaBiome(),
+                    targetLevel.getChunkSource().randomState().sampler());
+            chunk.setUnsaved(true);
+            biomeChunks.add(chunk);
+            return false;
+        }
+
+        private boolean stepFinalize() {
+            Optional<BlockPos> safeAttackerSpawn = findSafeSpawnPos(targetLevel, attackerPlan);
+            if (safeAttackerSpawn.isEmpty()) {
+                fail("No safe two-block-tall attacker landing spot was found near the opposite arena corner at "
+                        + formatPos(attackerArea.spawnTargetPos())
+                        + ". The prepared flag remains cleared; inspect the generated terrain and rerun preparation.", null);
+                return false;
+            }
+
+            int entityLimit = WarDayConfig.MAX_PREPARED_ENTITIES.getAsInt();
+            Set<UUID> capturedEntityRoots = new HashSet<>();
+            EntityTemplateCapture defenderCapture = capturePreparedEntityTemplates(
+                    sourceLevel, targetLevel, context.defenderPlan(), entityLimit, capturedEntityRoots);
+            List<CompoundTag> templates = new ArrayList<>(defenderCapture.templates());
+            EntityTemplateCapture terrainCapture = capturePreparedEntityTemplates(
+                    sourceLevel, targetLevel, attackerPlan,
+                    Math.max(0, entityLimit - defenderCapture.entityCount()), capturedEntityRoots);
+            templates.addAll(terrainCapture.templates());
+            int preparedEntities = defenderCapture.entityCount() + terrainCapture.entityCount();
+            int skippedEntities = defenderCapture.skippedCount() + terrainCapture.skippedCount();
+
+            BlockPos copiedNexusPos = context.defenderPlan().targetPos(context.defenderBase().nexus().pos());
+            buildNexusShell(targetLevel, copiedNexusPos);
+            WarDayState.get(source.getServer()).markPrepared(
+                    WarDayConfig.WAR_DAY_DIMENSION.get(),
+                    context.defenderBase().team().getName().getString(),
+                    context.attackerTeam().map(team -> team.getName().getString()).orElse(""),
+                    copiedNexusPos,
+                    safeAttackerSpawn.get(),
+                    templates
+            );
+            source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                    "Validated automatic attacker spawn at " + formatPos(safeAttackerSpawn.get())
+                            + " in the corner opposite the defender base."), true);
+            source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                    "Built protected nexus shell at " + formatPos(copiedNexusPos) + "."), true);
+            source.sendSuccess(() -> message(
+                    skippedEntities == 0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW,
+                    "Prepared " + preparedEntities + " non-player entities in " + templates.size()
+                            + " entity groups for match-time cloning; skipped " + skippedEntities + "."), true);
+            source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                    "War Day preparation complete. Arena biome " + biomeName(context.arenaBiome())
+                            + ", generated terrain, opposite-corner attacker spawn, nexus, and entity templates are ready. Next: /warday start.")
+                    .withStyle(ChatFormatting.BOLD), true);
+            finished = true;
+            return false;
+        }
+
+        private void reportStatus(CommandSourceStack output) {
+            String detail = switch (phase) {
+                case SEARCHING_TERRAIN -> "attempt " + Math.min(searchAttempt + 1, searchAttempts) + "/" + searchAttempts
+                        + ", candidate " + searchSample + "/" + samplesPerAttempt;
+                case LOADING_SOURCE_CHUNKS, LOADING_TARGET_CHUNKS, APPLYING_BIOME -> chunkIndex + "/"
+                        + (phase == PreparationPhase.LOADING_SOURCE_CHUNKS ? sourceChunks.size() : targetChunks.size()) + " chunks";
+                case CHECKING_DEFENDER_DESTINATION, CHECKING_TERRAIN_DESTINATION,
+                     COPYING_TERRAIN, CLEARING_DEFENDER_OVERLAY, COPYING_DEFENDER -> blockCursor == null
+                        ? "starting" : blockCursor.progressText();
+                case CLEARING_ARENA -> arenaCursor == null ? "starting" : arenaCursor.progressText();
+                case FINALIZING -> "final checks";
+            };
+            output.sendSuccess(() -> message(ChatFormatting.AQUA,
+                    "War Day preparation: " + phase.label + " (" + detail + ")"), false);
+            if (worldChanged) {
+                output.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                        "The arena is being rebuilt and is not startable until preparation completes."), false);
+            }
+        }
+
+        private boolean worldChanged() {
+            return worldChanged;
+        }
+
+        private void announcePhase(String text) {
+            source.sendSuccess(() -> message(ChatFormatting.AQUA, text), true);
+        }
+
+        private void fail(String text, RuntimeException exception) {
+            if (exception != null) {
+                WarDayMod.LOGGER.error("War Day preparation failed during {}", phase.label, exception);
+            } else {
+                WarDayMod.LOGGER.warn("War Day preparation stopped during {}: {}", phase.label, text);
+            }
+            source.sendFailure(message(ChatFormatting.RED, text));
+            finished = true;
+        }
+
+        private List<ChunkDimPos> sortedChunks(Set<ChunkDimPos> chunks) {
+            return chunks.stream()
+                    .sorted(Comparator.comparingInt(ChunkDimPos::x).thenComparingInt(ChunkDimPos::z))
+                    .toList();
+        }
+
+        private List<ChunkPos> arenaChunks() {
+            int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+            int minChunk = Math.floorDiv(-halfSize, 16);
+            int maxChunk = Math.floorDiv(halfSize - 1, 16);
+            List<ChunkPos> chunks = new ArrayList<>();
+            for (int x = minChunk; x <= maxChunk; x++) {
+                for (int z = minChunk; z <= maxChunk; z++) {
+                    chunks.add(new ChunkPos(x, z));
+                }
+            }
+            return List.copyOf(chunks);
+        }
+    }
+
+    private enum PreparationPhase {
+        SEARCHING_TERRAIN("searching terrain"),
+        LOADING_SOURCE_CHUNKS("loading source chunks"),
+        LOADING_TARGET_CHUNKS("loading target chunks"),
+        CHECKING_DEFENDER_DESTINATION("checking defender destination"),
+        CHECKING_TERRAIN_DESTINATION("checking terrain destination"),
+        CLEARING_ARENA("clearing arena"),
+        COPYING_TERRAIN("copying terrain"),
+        CLEARING_DEFENDER_OVERLAY("clearing defender overlay"),
+        COPYING_DEFENDER("copying defender base"),
+        APPLYING_BIOME("applying arena biome"),
+        FINALIZING("finalizing");
+
+        private final String label;
+
+        PreparationPhase(String label) {
+            this.label = label;
+        }
+    }
+
+    private static final class MutableCopyResult {
+        private int blocksCopied;
+        private int blockEntitiesCopied;
+        private int containersCleared;
+    }
+
+    private static final class PlanBlockCursor {
+        private final ServerLevel level;
+        private final List<ChunkDimPos> chunks;
+        private final boolean skipAirSections;
+        private final int minY;
+        private final int maxY;
+        private final long estimatedPositions;
+        private int chunkIndex;
+        private LevelChunk chunk;
+        private int sectionY;
+        private int localX;
+        private int localZ;
+        private int localY;
+        private boolean sectionReady;
+        private long visitedPositions;
+        private BlockPos currentPos = BlockPos.ZERO;
+        private BlockState currentState = Blocks.AIR.defaultBlockState();
+
+        private PlanBlockCursor(ServerLevel level, PlacementPlan plan, boolean skipAirSections) {
+            this.level = level;
+            this.chunks = plan.cluster().stream()
+                    .sorted(Comparator.comparingInt(ChunkDimPos::x).thenComparingInt(ChunkDimPos::z))
+                    .toList();
+            this.skipAirSections = skipAirSections;
+            this.minY = level.getMinBuildHeight();
+            this.maxY = level.getMaxBuildHeight();
+            this.sectionY = minY;
+            this.estimatedPositions = (long) chunks.size() * (maxY - minY) * 256L;
+        }
+
+        private boolean advance() {
+            while (chunkIndex < chunks.size()) {
+                if (chunk == null) {
+                    ChunkDimPos pos = chunks.get(chunkIndex);
+                    chunk = level.getChunk(pos.x(), pos.z());
+                    sectionY = minY;
+                    localX = 0;
+                    localZ = 0;
+                    localY = 0;
+                    sectionReady = false;
+                }
+                if (sectionY >= maxY) {
+                    chunk = null;
+                    chunkIndex++;
+                    continue;
+                }
+                if (!sectionReady) {
+                    if (skipAirSections && chunk.getSection(level.getSectionIndex(sectionY)).hasOnlyAir()) {
+                        visitedPositions += 4096L;
+                        sectionY += 16;
+                        continue;
+                    }
+                    sectionReady = true;
+                }
+
+                ChunkDimPos chunkPos = chunks.get(chunkIndex);
+                int y = sectionY + localY;
+                currentPos = new BlockPos(chunkPos.x() * 16 + localX, y, chunkPos.z() * 16 + localZ);
+                currentState = chunk.getBlockState(currentPos);
+                visitedPositions++;
+                localY++;
+                if (localY >= 16 || sectionY + localY >= maxY) {
+                    localY = 0;
+                    localZ++;
+                    if (localZ >= 16) {
+                        localZ = 0;
+                        localX++;
+                        if (localX >= 16) {
+                            localX = 0;
+                            sectionY += 16;
+                            sectionReady = false;
+                        }
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private BlockPos currentPos() {
+            return currentPos;
+        }
+
+        private BlockState currentState() {
+            return currentState;
+        }
+
+        private String progressText() {
+            long percent = estimatedPositions == 0L ? 100L : Math.min(100L, visitedPositions * 100L / estimatedPositions);
+            return percent + "%";
+        }
+    }
+
+    private static final class ArenaBlockCursor {
+        private final ServerLevel level;
+        private final int halfSize;
+        private final int minChunk;
+        private final int maxChunk;
+        private final int minY;
+        private final int maxY;
+        private final long estimatedPositions;
+        private final boolean skipAirSections;
+        private int chunkX;
+        private int chunkZ;
+        private LevelChunk chunk;
+        private int sectionY;
+        private int x;
+        private int z;
+        private int localY;
+        private int minX;
+        private int maxX;
+        private int minZ;
+        private int maxZ;
+        private boolean sectionReady;
+        private long visitedPositions;
+        private BlockPos currentPos = BlockPos.ZERO;
+        private BlockState currentState = Blocks.AIR.defaultBlockState();
+
+        private ArenaBlockCursor(ServerLevel level, boolean skipAirSections) {
+            this.level = level;
+            this.skipAirSections = skipAirSections;
+            this.halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+            this.minChunk = Math.floorDiv(-halfSize, 16);
+            this.maxChunk = Math.floorDiv(halfSize - 1, 16);
+            this.chunkX = minChunk;
+            this.chunkZ = minChunk;
+            this.minY = level.getMinBuildHeight();
+            this.maxY = level.getMaxBuildHeight();
+            this.sectionY = minY;
+            this.estimatedPositions = (long) halfSize * 2L * halfSize * 2L * (maxY - minY);
+        }
+
+        private boolean advance() {
+            while (chunkX <= maxChunk) {
+                if (chunk == null) {
+                    chunk = level.getChunk(chunkX, chunkZ);
+                    minX = Math.max(-halfSize, chunkX * 16);
+                    maxX = Math.min(halfSize, chunkX * 16 + 16);
+                    minZ = Math.max(-halfSize, chunkZ * 16);
+                    maxZ = Math.min(halfSize, chunkZ * 16 + 16);
+                    x = minX;
+                    z = minZ;
+                    localY = 0;
+                    sectionY = minY;
+                    sectionReady = false;
+                }
+                if (sectionY >= maxY) {
+                    chunk = null;
+                    chunkZ++;
+                    if (chunkZ > maxChunk) {
+                        chunkZ = minChunk;
+                        chunkX++;
+                    }
+                    continue;
+                }
+                if (!sectionReady) {
+                    if (skipAirSections && chunk.getSection(level.getSectionIndex(sectionY)).hasOnlyAir()) {
+                        visitedPositions += (long) (maxX - minX) * (maxZ - minZ) * 16L;
+                        sectionY += 16;
+                        continue;
+                    }
+                    sectionReady = true;
+                }
+
+                currentPos = new BlockPos(x, sectionY + localY, z);
+                currentState = chunk.getBlockState(currentPos);
+                visitedPositions++;
+                localY++;
+                if (localY >= 16 || sectionY + localY >= maxY) {
+                    localY = 0;
+                    z++;
+                    if (z >= maxZ) {
+                        z = minZ;
+                        x++;
+                        if (x >= maxX) {
+                            x = minX;
+                            sectionY += 16;
+                            sectionReady = false;
+                        }
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private BlockPos currentPos() {
+            return currentPos;
+        }
+
+        private BlockState currentState() {
+            return currentState;
+        }
+
+        private String progressText() {
+            long percent = estimatedPositions == 0L ? 100L : Math.min(100L, visitedPositions * 100L / estimatedPositions);
+            return percent + "%";
+        }
     }
 
     private record PlacementPlan(
