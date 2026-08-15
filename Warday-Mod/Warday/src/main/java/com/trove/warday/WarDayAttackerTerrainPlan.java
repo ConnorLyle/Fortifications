@@ -140,6 +140,50 @@ public final class WarDayAttackerTerrainPlan {
                 && targetZ >= -halfSizeBlocks && targetZ < halfSizeBlocks;
     }
 
+    public static int maximumArenaSearchRadius(int preferredX, int preferredZ, int halfSizeBlocks) {
+        int halfSize = Math.max(1, halfSizeBlocks);
+        int min = -halfSize;
+        int max = halfSize - 1;
+        return Math.max(
+                Math.max(Math.abs(preferredX - min), Math.abs(preferredX - max)),
+                Math.max(Math.abs(preferredZ - min), Math.abs(preferredZ - max))
+        );
+    }
+
+    public static int nearestRingSize(int distance) {
+        if (distance < 0) {
+            throw new IllegalArgumentException("Distance cannot be negative");
+        }
+        return distance == 0 ? 1 : distance * 8;
+    }
+
+    public static ColumnOffset nearestRingOffset(int distance, int index) {
+        int ringSize = nearestRingSize(distance);
+        if (index < 0 || index >= ringSize) {
+            throw new IllegalArgumentException("Ring index is outside the requested distance");
+        }
+        if (distance == 0) {
+            return new ColumnOffset(0, 0);
+        }
+
+        int topLength = distance * 2 + 1;
+        if (index < topLength) {
+            return new ColumnOffset(-distance + index, -distance);
+        }
+        index -= topLength;
+
+        int sideLength = distance * 2;
+        if (index < sideLength) {
+            return new ColumnOffset(distance, -distance + 1 + index);
+        }
+        index -= sideLength;
+        if (index < sideLength) {
+            return new ColumnOffset(distance - 1 - index, distance);
+        }
+        index -= sideLength;
+        return new ColumnOffset(-distance, distance - 1 - index);
+    }
+
     public record SourceWindow(
             int minChunkX,
             int maxChunkX,
@@ -173,6 +217,9 @@ public final class WarDayAttackerTerrainPlan {
     }
 
     public record CornerSpawn(String name, int x, int z) {
+    }
+
+    public record ColumnOffset(int x, int z) {
     }
 
 }

@@ -1,6 +1,8 @@
 package com.trove.warday;
 
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 
 public final class WarDayAttackerTerrainPlanTest {
     private WarDayAttackerTerrainPlanTest() {
@@ -39,6 +41,28 @@ public final class WarDayAttackerTerrainPlanTest {
         expect(true, WarDayAttackerTerrainPlan.insideArena(124, 124, 125), "maximum border column");
         expect(false, WarDayAttackerTerrainPlan.insideArena(125, 0, 125), "positive border excluded");
         expect(false, WarDayAttackerTerrainPlan.insideArena(-126, 0, 125), "below negative border");
+
+        expect(240, WarDayAttackerTerrainPlan.maximumArenaSearchRadius(112, -112, 128),
+                "corner fallback reaches the far side of the complete arena");
+        expect(128, WarDayAttackerTerrainPlan.maximumArenaSearchRadius(0, 0, 128),
+                "center fallback reaches the negative arena edge");
+        Set<String> searchedArenaColumns = new HashSet<>();
+        int maximumRadius = WarDayAttackerTerrainPlan.maximumArenaSearchRadius(112, -112, 128);
+        for (int distance = 0; distance <= maximumRadius; distance++) {
+            int ringSize = WarDayAttackerTerrainPlan.nearestRingSize(distance);
+            for (int index = 0; index < ringSize; index++) {
+                WarDayAttackerTerrainPlan.ColumnOffset offset =
+                        WarDayAttackerTerrainPlan.nearestRingOffset(distance, index);
+                expect(distance, Math.max(Math.abs(offset.x()), Math.abs(offset.z())),
+                        "ring offset remains at its requested distance");
+                int x = 112 + offset.x();
+                int z = -112 + offset.z();
+                if (WarDayAttackerTerrainPlan.insideArena(x, z, 128)) {
+                    searchedArenaColumns.add(x + "," + z);
+                }
+            }
+        }
+        expect(256 * 256, searchedArenaColumns.size(), "fallback visits every arena column");
 
         WarDayAttackerTerrainPlan.SourceWindow defaultWindow = WarDayAttackerTerrainPlan.sourceWindow(
                 1_000, -1_000, 0, 0, 128);

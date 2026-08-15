@@ -3594,43 +3594,6 @@ public class WarDayCommands {
         return new EntityCopyResult(copied, itemFramesCleared, failed);
     }
 
-    private static Optional<BlockPos> findSafeSourceCornerSpawn(
-            ServerLevel sourceLevel,
-            PlacementPlan arenaPlan,
-            PlacementPlan defenderPlan,
-            BlockPos preferred
-    ) {
-        TargetFootprint claim = defenderPlan.targetFootprint();
-        for (int distance = 0; distance <= 8; distance++) {
-            for (int x = preferred.getX() - distance; x <= preferred.getX() + distance; x++) {
-                for (int z = preferred.getZ() - distance; z <= preferred.getZ() + distance; z++) {
-                    if (distance > 0 && Math.max(Math.abs(x - preferred.getX()), Math.abs(z - preferred.getZ())) != distance) {
-                        continue;
-                    }
-                    if (!WarDayAttackerTerrainPlan.insideArena(
-                            x, z, WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt())
-                            || x >= claim.minX() && x <= claim.maxX() && z >= claim.minZ() && z <= claim.maxZ()) {
-                        continue;
-                    }
-                    BlockPos sourceColumn = arenaPlan.sourcePos(new BlockPos(
-                            x, arenaPlan.targetAnchorPos().getY(), z));
-                    BlockPos sourceSurface = new BlockPos(
-                            sourceColumn.getX(),
-                            sourceLevel.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
-                                    sourceColumn.getX(), sourceColumn.getZ()),
-                            sourceColumn.getZ()
-                    );
-                    BlockPos targetSurface = arenaPlan.targetPos(sourceSurface);
-                    if (arenaPlan.containsTargetColumn(targetSurface)
-                            && isSafeSpawnPos(sourceLevel, sourceSurface)) {
-                        return Optional.of(targetSurface);
-                    }
-                }
-            }
-        }
-        return Optional.empty();
-    }
-
     private static Optional<BlockPos> findSafeSpawnNear(ServerLevel level, BlockPos preferred, int horizontalRadius, int verticalRadius) {
         if (isSafeSpawnPos(level, preferred)) {
             return Optional.of(preferred);
@@ -3878,6 +3841,7 @@ public class WarDayCommands {
         private PreparationPhase phase = PreparationPhase.LOADING_SOURCE_CHUNKS;
         private int chunkIndex;
         private int cornerSpawnIndex;
+        private CornerSpawnSearchCursor cornerSpawnCursor;
         private final List<BlockPos> safeAttackerSpawns = new ArrayList<>();
         private PlanBlockCursor blockCursor;
         private ArenaBlockCursor arenaCursor;
@@ -3981,11 +3945,17 @@ public class WarDayCommands {
                 return true;
             }
             BlockPos target = attackerArea.spawnTargetPositions().get(cornerSpawnIndex);
-            Optional<BlockPos> safe = findSafeSourceCornerSpawn(
-                    sourceLevel, attackerPlan, context.defenderPlan(), target);
+            if (cornerSpawnCursor == null) {
+                cornerSpawnCursor = new CornerSpawnSearchCursor(
+                        sourceLevel, targetLevel, attackerPlan, context.defenderPlan(), target);
+            }
+            if (cornerSpawnCursor.advance()) {
+                return true;
+            }
+            Optional<BlockPos> safe = cornerSpawnCursor.safeTarget();
             if (safe.isEmpty()) {
-                fail("No safe two-block-tall attacker landing spot exists in the copied source terrain near corner "
-                        + formatPos(target) + ". The previous prepared arena was not changed.", null);
+                fail("No safe two-block-tall attacker landing spot exists anywhere in the copied 256x256 arena "
+                        + "for corner " + formatPos(target) + ". The previous prepared arena was not changed.", null);
                 return false;
             }
             BlockPos safeTarget = safe.get();
@@ -3996,6 +3966,7 @@ public class WarDayCommands {
                 return false;
             }
             safeAttackerSpawns.add(safeTarget);
+            cornerSpawnCursor = null;
             cornerSpawnIndex++;
             return false;
         }
@@ -4222,7 +4193,8 @@ public class WarDayCommands {
             String detail = switch (phase) {
                 case LOADING_SOURCE_CHUNKS, LOADING_TARGET_CHUNKS, APPLYING_BIOME -> chunkIndex + "/"
                         + (phase == PreparationPhase.LOADING_SOURCE_CHUNKS ? sourceChunks.size() : targetChunks.size()) + " chunks";
-                case VALIDATING_CORNER_SPAWNS -> cornerSpawnIndex + "/4 corners";
+                case VALIDATING_CORNER_SPAWNS -> cornerSpawnIndex + "/4 corners"
+                        + (cornerSpawnCursor == null ? "" : ", " + cornerSpawnCursor.progressText());
                 case CHECKING_DEFENDER_DESTINATION, CHECKING_TERRAIN_DESTINATION,
                      COPYING_TERRAIN, COPYING_DEFENDER -> blockCursor == null
                         ? "starting" : blockCursor.progressText();
@@ -4272,6 +4244,90 @@ public class WarDayCommands {
                 }
             }
             return List.copyOf(chunks);
+        }
+    }
+
+    private static final class CornerSpawnSearchCursor {
+        private final ServerLevel sourceLevel;
+        private final ServerLevel targetLevel;
+        private final PlacementPlan arenaPlan;
+        private final TargetFootprint claim;
+        private final BlockPos preferred;
+        private final int halfSize;
+        private final int maximumDistance;
+        private int distance;
+        private int ringIndex;
+        private BlockPos safeTarget;
+        private boolean finished;
+
+        private CornerSpawnSearchCursor(
+                ServerLevel sourceLevel,
+                ServerLevel targetLevel,
+                PlacementPlan arenaPlan,
+                PlacementPlan defenderPlan,
+                BlockPos preferred
+        ) {
+            this.sourceLevel = sourceLevel;
+            this.targetLevel = targetLevel;
+            this.arenaPlan = arenaPlan;
+            this.claim = defenderPlan.targetFootprint();
+            this.preferred = preferred;
+            this.halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+            this.maximumDistance = WarDayAttackerTerrainPlan.maximumArenaSearchRadius(
+                    preferred.getX(), preferred.getZ(), halfSize);
+        }
+
+        private boolean advance() {
+            if (finished) {
+                return false;
+            }
+            if (distance > maximumDistance) {
+                finished = true;
+                return false;
+            }
+
+            int currentDistance = distance;
+            WarDayAttackerTerrainPlan.ColumnOffset offset = WarDayAttackerTerrainPlan.nearestRingOffset(
+                    currentDistance, ringIndex++);
+            if (ringIndex >= WarDayAttackerTerrainPlan.nearestRingSize(currentDistance)) {
+                distance++;
+                ringIndex = 0;
+            }
+
+            int targetX = preferred.getX() + offset.x();
+            int targetZ = preferred.getZ() + offset.z();
+            if (!WarDayAttackerTerrainPlan.insideArena(targetX, targetZ, halfSize)
+                    || (targetX >= claim.minX() && targetX <= claim.maxX()
+                    && targetZ >= claim.minZ() && targetZ <= claim.maxZ())) {
+                return true;
+            }
+
+            BlockPos sourceColumn = arenaPlan.sourcePos(new BlockPos(
+                    targetX, arenaPlan.targetAnchorPos().getY(), targetZ));
+            BlockPos sourceSurface = new BlockPos(
+                    sourceColumn.getX(),
+                    sourceLevel.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                            sourceColumn.getX(), sourceColumn.getZ()),
+                    sourceColumn.getZ()
+            );
+            BlockPos candidateTarget = arenaPlan.targetPos(sourceSurface);
+            if (arenaPlan.containsTargetColumn(candidateTarget)
+                    && candidateTarget.getY() > targetLevel.getMinBuildHeight()
+                    && candidateTarget.getY() + 1 < targetLevel.getMaxBuildHeight()
+                    && isSafeSpawnPos(sourceLevel, sourceSurface)) {
+                safeTarget = candidateTarget;
+                finished = true;
+                return false;
+            }
+            return true;
+        }
+
+        private Optional<BlockPos> safeTarget() {
+            return Optional.ofNullable(safeTarget);
+        }
+
+        private String progressText() {
+            return "search radius " + Math.min(distance, maximumDistance) + "/" + maximumDistance;
         }
     }
 
