@@ -57,6 +57,7 @@ dependencies {
     compileOnly files('../../mods/relics-1.21.1-0.12.8.jar')
     compileOnly files('../../mods/curios-neoforge-9.5.1+1.21.1.jar')
     compileOnly files('../../mods/journeymap-api-neoforge-2.0.0-1.21.1.jar')
+    compileOnly files('../../mods/puffish_skills-0.18.3-1.21-neoforge.jar')
 }
 
 var fortChestTeamAccessTest = tasks.register('fortChestTeamAccessTest', JavaExec) {
@@ -101,9 +102,16 @@ var friendlyFireTest = tasks.register('friendlyFireTest', JavaExec) {
     mainClass = 'com.trove.warday.WarDayFriendlyFireTest'
 }
 
+var classResetPolicyTest = tasks.register('classResetPolicyTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.fortifications.ClassResetPolicyTest'
+}
+
 tasks.named('check') {
     dependsOn fortChestTeamAccessTest, rosterHealthTest, spectatorCycleTest,
-            attackerTerrainPlanTest, journeyMapPrivacyTest, rapidBreakRuleTest, friendlyFireTest
+            attackerTerrainPlanTest, journeyMapPrivacyTest, rapidBreakRuleTest, friendlyFireTest,
+            classResetPolicyTest
 }
 
 tasks.named('test', Test) {

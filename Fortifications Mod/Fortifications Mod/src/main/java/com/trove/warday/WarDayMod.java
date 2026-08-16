@@ -47,7 +47,6 @@ public final class WarDayMod {
                     .icon(() -> NEXUS_ITEM.get().getDefaultInstance())
                     .displayItems((parameters, output) -> {
                         output.accept(NEXUS_ITEM.get());
-                        output.accept(FORWARD_MARKER_ITEM.get());
                         output.accept(ATTACKER_SPAWN_ITEM.get());
                     })
                     .build());
