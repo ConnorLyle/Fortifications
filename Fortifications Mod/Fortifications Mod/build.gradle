@@ -49,12 +49,14 @@ dependencies {
     implementation "curse.maven:architectury-api-419699:5553800"
     implementation "curse.maven:ftb-library-forge-404465:7746959"
     implementation "curse.maven:ftb-teams-forge-404468:7878281"
+    implementation "curse.maven:ftb-chunks-forge-314906:7608681"
     compileOnly files('../../mods/irons_spellbooks-1.21.1-3.16.2.jar')
     compileOnly files('../../mods/gametechbcs_spellbooks-3.0.0-1.21.1.jar')
     compileOnly files('../../mods/gtbcs_geomancy_plus-1.1.0-1.21.1.jar')
     compileOnly files('../../mods/tunes_n_tomes-1.1.0-HOTFIX.jar')
     compileOnly files('../../mods/relics-1.21.1-0.12.8.jar')
     compileOnly files('../../mods/curios-neoforge-9.5.1+1.21.1.jar')
+    compileOnly files('../../mods/journeymap-api-neoforge-2.0.0-1.21.1.jar')
 }
 
 var fortChestTeamAccessTest = tasks.register('fortChestTeamAccessTest', JavaExec) {
@@ -63,8 +65,45 @@ var fortChestTeamAccessTest = tasks.register('fortChestTeamAccessTest', JavaExec
     mainClass = 'com.example.fortifications.FortChestTeamAccessTest'
 }
 
+var rosterHealthTest = tasks.register('rosterHealthTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayRosterHealthTest'
+}
+
+var spectatorCycleTest = tasks.register('spectatorCycleTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDaySpectatorCycleTest'
+}
+
+var attackerTerrainPlanTest = tasks.register('attackerTerrainPlanTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayAttackerTerrainPlanTest'
+}
+
+var journeyMapPrivacyTest = tasks.register('journeyMapPrivacyTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayTeamVisibilityTest'
+}
+
+var rapidBreakRuleTest = tasks.register('rapidBreakRuleTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayRapidBreakRuleTest'
+}
+
+var friendlyFireTest = tasks.register('friendlyFireTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayFriendlyFireTest'
+}
+
 tasks.named('check') {
-    dependsOn fortChestTeamAccessTest
+    dependsOn fortChestTeamAccessTest, rosterHealthTest, spectatorCycleTest,
+            attackerTerrainPlanTest, journeyMapPrivacyTest, rapidBreakRuleTest, friendlyFireTest
 }
 
 tasks.named('test', Test) {

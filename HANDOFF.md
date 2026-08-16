@@ -31,8 +31,8 @@ Do not begin implementation until that assessment has been presented. If the use
 ## Completing and documenting a queue item
 
 - Once an item is implemented and verified, change `- [ ] Description` in `WARDAY_TODO.md` to `- [x] ~~Description~~` and add a short indented completion note stating the verification performed.
-- Build the changed project after each completed fix: run `gradle build` from `Warday-Mod/Warday` for Warday, or `.\gradlew.bat build` from `Fortifications Mod/Fortifications Mod` for Fortifications.
-- After a successful Warday build, replace only `MYTH MODS FOR DEREK/warday-1.0.0.jar` with `Warday-Mod/Warday/build/libs/warday-1.0.0.jar`. After a successful Fortifications build, replace only `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` with `Fortifications Mod/Fortifications Mod/build/libs/fortifications-1.0.0.jar`.
+- Build all current Fortifications and War Day changes with `.\gradlew.bat build` from `Fortifications Mod/Fortifications Mod`.
+- After a successful build, replace `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` with `Fortifications Mod/Fortifications Mod/build/libs/fortifications-1.0.0.jar`. The bundle must not contain the retired standalone `warday-1.0.0.jar`.
 - Verify that each refreshed distributable matches its build artifact by file size or cryptographic hash, and mention the refreshed JAR in the completion report. Do not alter other files in `MYTH MODS FOR DEREK`.
 - Prefer focused automated coverage for calculations and state transitions, but never treat compilation alone as proof of Minecraft runtime behavior.
 - For gameplay changes, include a concise manual test recipe and result beneath the completed queue item.
@@ -44,8 +44,9 @@ Do not begin implementation until that assessment has been presented. If the use
 
 ## Mission Accomplished
 
-- `Warday-Mod/Warday` currently compiles with `gradle build` from `Warday-Mod/Warday`.
-- `Fortifications Mod/Fortifications Mod` currently compiles with `./gradlew.bat build` from `Fortifications Mod/Fortifications Mod`.
+- Fortifications and War Day are now one NeoForge mod and one JAR named `fortifications`, built from `Fortifications Mod/Fortifications Mod` with `.\gradlew.bat build`. `Warday-Mod/Warday` remains only as pre-merge rollback/reference source.
+- The merged metadata exposes one mod entry with ID/display name `fortifications`/`Fortifications`. `/warday` remains the War Day command root, while current registries, packets, assets, translations, and the dimension use the `fortifications:` namespace.
+- Current War Day IDs are `fortifications:nexus`, `fortifications:forward_marker`, `fortifications:attacker_spawn`, and `fortifications:war_day`. Registry aliases remap the three old `warday:` blocks/items and creative tab to their new IDs when an existing world loads. The saved-data filename remains `warday_state` so player recovery data is not silently abandoned; loading an inactive legacy `warday:war_day` state rewrites the dimension and invalidates the old prepared arena.
 - The Warday mod has a command surface under `/warday` in `WarDayCommands`:
   - `/warday team1 <name>` and `/warday team2 <name>` configure FTB team names.
   - `/warday blocks` and `/warday kit` give setup blocks to an operator player.
@@ -62,7 +63,7 @@ Do not begin implementation until that assessment has been presented. If the use
   - `warday:forward_marker`
   - `warday:attacker_spawn`
 - `ForwardMarkerBlock` persists horizontal facing, which is used for reporting the base orientation plan.
-- Defender base rotation is implemented in `Warday-Mod/Warday/src/main/java/com/trove/warday/WarDayCommands.java`:
+- Defender base rotation is implemented in `Fortifications Mod/Fortifications Mod/src/main/java/com/trove/warday/WarDayCommands.java`:
   - `PlacementPlan` rotates defender positions around the nexus so the forward marker faces west toward the attacker side; the independent generated-terrain background is not rotated.
   - Rotated target positions are used by destination conflict checks, full-height destination wiping, block copying, copied nexus state, decorative entity copying, and safe spawn searches.
   - Copied block states are rotated with `BlockState.rotate(...)`.
@@ -93,7 +94,7 @@ Do not begin implementation until that assessment has been presented. If the use
 - The Fortifications compile-only dependencies now match the current pack versions of Relics 0.12.8, Iron's Spells 3.16.2, and Tunes & Tomes 1.1.0-HOTFIX.
 - Recipe/loot datapack overrides exist under the Fortifications mod resources for several third-party mods, including `artifacts`, `relics`, `alexscaves`, and `sophisticatedbackpacks`.
 - Fortifications registers `fortifications:fort_chest`, displayed as **The FortChest**. It is a single-only 27-slot chest with vanilla chest opening, obstruction, hopper, comparator, naming, drop, and piglin behavior; its placed and inventory renderers use the current user-supplied custom 64x64 RGBA chest sheet.
-- The refreshed Warday and Fortifications distributables are present at `MYTH MODS FOR DEREK/warday-1.0.0.jar` and `MYTH MODS FOR DEREK/fortifications-1.0.0.jar`.
+- The only current distributable is `MYTH MODS FOR DEREK/fortifications-1.0.0.jar`; the standalone Warday jar was removed from the bundle after the merge.
 
 ## Active/Halted Work
 
@@ -102,7 +103,7 @@ Do not begin implementation until that assessment has been presented. If the use
 - Every FortChest bound to the same team delegates to one 27-slot inventory stored in that FTB team's persistent extra data. Different team IDs remain isolated. Breaking one physical chest drops only the block and leaves shared contents intact; the inventory survives having no placed chest and returns when the team places another. Legacy per-block contents migrate into the team's storage on first binding, with overflow returned to the claiming player as drops.
 - FortChest texture provenance: the latest user-supplied `dark's textures/fortchest.png` was copied byte-for-byte to `Fortifications Mod/Fortifications Mod/src/main/resources/assets/fortifications/textures/entity/chest/fort_chest.png`; both source and project texture are 64x64 RGBA PNG files with SHA-256 `51732812E33E011E8C0043CDB7438EAA1218FE6C4067E3B6DE460309C63E937E`. The packaged texture was independently hashed to the same value.
 - Animated Nexus texture correction: the current files come directly from `dark's textures/nexus.png` and `nexus.png.mcmeta`. The 16x256 sixteen-frame sheet has SHA-256 `58E60E192A9A53F691F1CC104D5906BE34FE9ABA0C6DD7D5908D9ABBBA139383`, and its metadata cycles frames 0-15 for two ticks each. Static JAR inspection verified both current resources are packaged. In-game animation and appearance still need runtime verification after a client restart or resource reload.
-- `./gradlew.bat build --no-daemon --no-problems-report` succeeded on 2026-08-15 with the focused `FortChestTeamAccessTest`; packaged metadata contains required Architectury/FTB Library/FTB Teams dependencies and the latest FortChest texture. The artifact and refreshed `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` are both 102,659 bytes with SHA-256 `CF504C62FE9102A4D5CE70F90EC37361A92B3DAD6273001B98A0EE614D589B90`.
+- The final merged `.\gradlew.bat build --no-daemon --no-problems-report` succeeded on 2026-08-15. It ran `FortChestTeamAccessTest` plus every Warday focused check. Static JAR inspection confirmed one `fortifications` mod entry, the union of FTB Chunks/Curios/JourneyMap dependencies, current FortChest/Nexus resources, `data/fortifications/dimension/war_day.json`, no `assets/warday` or `data/warday` entries, and compatibility aliases for legacy setup-block IDs. The artifact and sole refreshed distributable are both 292,017 bytes with SHA-256 `7FF13BBDE586D69C8B0E51C443168CCC4ABB630709AB2C8A8ED90BEDA1622CA3`.
 - FortChest runtime verification remains: use at least two FTB teams and multiple chests per team; verify placement binding, same-team shared live updates, cross-team inventory isolation, open/break denial, team leave/join behavior, legacy chest claiming/migration, breaking the last chest without item loss, replacement after restart, explosion immunity, hopper denial, comparator output, texture/rendering, adjacency, naming, opening animation/sound, obstruction/cat blocking, and server restart. Also copy a FortChest through `/warday prepare`, start/end the match, and confirm Warday never clears the external team inventory.
 - Fortifications Relics 0.12 compatibility was implemented after the 2026-08-06 client crashes showed required mixin injections scanning zero targets. The first launch exposed the removed `upgradeModifier(...)` target in item mixins; the next launch exposed the removed `isRankModifierUnlocked(...)` target in Sealed Sword and Shock Pendant event mixins. Source audit migrated every occurrence of both removed APIs rather than stopping at the reported failures.
 - `./gradlew.bat build --no-daemon --no-problems-report` succeeded on 2026-08-06 after transient OneDrive access-denial retries in NeoForge's generated `build/tmp` output. Static `javap` inspection confirmed every current Relics 0.12.8, Reliquified Artifacts 1.0.7, and Reliquified Iron's Spells 0.2.7 target method contains enough `initialValue(...)`, `targetValue(...)`, and `AbilityRankModifierData.isEnabled()` calls for all referenced mixin ordinals.
@@ -116,7 +117,7 @@ Do not begin implementation until that assessment has been presented. If the use
 - `WarDayRapidBreakRuleTest` covers the 15th-break boundary, rolling-window expiry, retrigger reset, exact modifier conversion, all four tiers, and the cap. The 2026-08-10 full build passed; current artifact evidence is recorded below.
 - The rapid-break item remains unchecked pending the full gameplay/exemption/lifecycle/configuration matrix recorded in `WARDAY_TODO.md`.
 - Current user-requested combat update: `WARDAY_TODO.md` section **Combat rules**, exact task **“Disable friendly fire between participants on the same persisted War Day team during active combat.”** `LivingIncomingDamageEvent` now cancels same-side player damage in the Warday dimension, including projectile sources. `WarDayFriendlyFireTest` covers both teams, opponents, and outsiders; runtime weapon/mod interaction checks remain required.
-- Final Warday verification on 2026-08-15: `gradle build --no-daemon --no-problems-report` succeeded with all focused checks after adding `/warday clear`, two-pass entity cleanup verification, and the latest sixteen-frame Nexus texture and metadata at two ticks per frame. `WarDayAttackerTerrainPlanTest` covers the two-consecutive-empty-pass rule as well as the exact map/border, spawn-fallback, and arena-copy calculations. Warday still exempts team-shared FortChest contents from storage clearing while retaining its match-time storage-access ban. The build artifact and refreshed `MYTH MODS FOR DEREK/warday-1.0.0.jar` are both 192,704 bytes with SHA-256 `D498F2842AA575B7A89CA50EDDC2E32C44CC01136B0BB348C848E96FB5D9385D`.
+- The merged build preserves `/warday`, all Warday focused tests, the two-pass entity cleanup rule, exact map/border and spawn-fallback calculations, FortChest shared-storage exemption, and the 16-frame Nexus animation. Minecraft runtime verification is still required after the loader and namespace merge.
 - Previous implementation item: `WARDAY_TODO.md` section **Skills and map privacy**, exact task **“Investigate and implement the strongest feasible JourneyMap integration/configuration that hides non-teammate player icons while retaining teammate icons.”**
 - Installed JourneyMap 6.0.3/API 2.0.0 exposes a server-side per-receiver/per-target `PlayerRadarUpdateEvent`. Warday now subscribes when JourneyMap is loaded and preserves visibility only when both players resolve to the same FTB Team ID. It never makes a JourneyMap-hidden player visible, applies globally including operators, and fails closed when team state is unavailable.
 - `WarDayTeamVisibilityTest` covers same/different/missing teams and preservation of stricter JourneyMap decisions. `gradle build --no-daemon --no-problems-report` succeeded with all four focused checks; packaged metadata confirms the optional 6.0.x dependency. The artifact and refreshed `MYTH MODS FOR DEREK/warday-1.0.0.jar` are both 139,208 bytes with SHA-256 `79A9AB4ED1BE5D313940A9CA4AB5826266F8948EF18C2AC381ABA30B0C7CA651`.
@@ -171,9 +172,9 @@ Do not begin implementation until that assessment has been presented. If the use
 
 ## Next Immediate Steps
 
-1. Launch the updated CurseForge instance through mod construction. If it still fails, inspect the newly generated `latest.log`/crash report because the next failure may have been masked by the three fatal Relics mixin errors.
+1. Back up the world, remove both old standalone jars, install only the merged `fortifications-1.0.0.jar` on client and server, and launch through mod construction. Confirm NeoForge lists one Fortifications mod and no duplicate registration/mixin/network error occurs.
 2. In a world, verify Kinetic/Hunting Belt slots and Cloud in a Bottle jumps remain fixed at 2, sealed-weapon respawn time remains 120 seconds, and Night Vision Goggles, Power Glove, and Vampiric Glove additive stats still progress at their intended rates.
-3. Deploy the 2026-08-15 Warday jar and reproduce `/warday prepare` first: preview must return immediately; confirm must advance through `/warday prepare status` without watchdog warnings. Test cancel and clean restart during search and after clearing starts, then verify automatic terrain/spawn preparation for all four defender directions, full coverage, irregular claims, surface safety, defender overlap, and repeat preparation.
+3. In the backed-up world, confirm old `warday:war_day` prepared state is invalidated and run a fresh `/warday prepare confirm` into `fortifications:war_day`. Verify existing custom team/config values in the new `fortifications-server.toml`, then test status/cancel/restart, all four defender directions, full coverage, irregular claims, surface safety, defender overlap, and repeat preparation.
 4. Test tagged team blocks with pre-owned wool, stolen opposing stacks, split/drop/pickup, start/respawn/reconnect replenishment, then exercise Ender pouches and vanilla/modded entity storage.
 5. Populate the arena and storage entities, run `/warday clear`, `/warday end`, and both victory paths, and confirm the arena is air, all non-player entities are gone, progress/counts are credible, a warned player is preserved, and a second prepare starts cleanly.
 6. Verify only the Classes Puffish tree remains, then run the JourneyMap privacy matrix, all four rapid-break tiers, and the friendly-fire weapon/projectile matrix from `WARDAY_TODO.md`.
@@ -238,14 +239,14 @@ Do not begin implementation until that assessment has been presented. If the use
   - `SavedPlayers` list of player snapshot compounds
 - `WarDayState.load` also reads legacy `SavedGameModes` entries and converts them into partial `PlayerSnapshot` entries. This looks like backward compatibility for an older saved state shape.
 - Fortifications adds the synced attribute `fortifications:unarmed_damage` to players through `EntityAttributeModificationEvent`.
-- Warday adds a bundled dimension data file at `Warday-Mod/Warday/src/main/resources/data/warday/dimension/war_day.json`. The configured default dimension id is `warday:war_day`.
+- The combined mod adds its bundled dimension at `Fortifications Mod/Fortifications Mod/src/main/resources/data/fortifications/dimension/war_day.json`. The configured default dimension ID is `fortifications:war_day`.
 
 ## Environment Variables
 
 - No environment variables, API keys, or external connection strings were found or introduced by this handoff.
 - Local build assumptions:
-  - `Warday-Mod/Warday` expects a system `gradle` command; there is no `gradlew.bat` in that subproject.
-  - `Fortifications Mod/Fortifications Mod` has a Gradle wrapper and builds with `./gradlew.bat build`.
+  - `Fortifications Mod/Fortifications Mod` is the canonical combined project and builds with `.\gradlew.bat build`.
+  - `Warday-Mod/Warday` is rollback/reference source only and must not be used to refresh distributables.
   - A manual Minecraft/NeoForge runtime is still required to validate gameplay behavior.
 
 # 4. Known Tech Debt, Hacks, & AI Shortcuts

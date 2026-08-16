@@ -9,9 +9,9 @@ public final class FortificationBlockRules {
     public static final float DEEPSLATE_HARDNESS = 3.0F;
     public static final float DEEPSLATE_BLAST_RESISTANCE = 6.0F;
 
-    private static final ResourceLocation WARDAY_NEXUS = ResourceLocation.fromNamespaceAndPath("warday", "nexus");
-    private static final ResourceLocation WARDAY_FORWARD_MARKER = ResourceLocation.fromNamespaceAndPath("warday", "forward_marker");
-    private static final ResourceLocation WARDAY_ATTACKER_SPAWN = ResourceLocation.fromNamespaceAndPath("warday", "attacker_spawn");
+    private static final ResourceLocation WARDAY_NEXUS = ResourceLocation.fromNamespaceAndPath("fortifications", "nexus");
+    private static final ResourceLocation WARDAY_FORWARD_MARKER = ResourceLocation.fromNamespaceAndPath("fortifications", "forward_marker");
+    private static final ResourceLocation WARDAY_ATTACKER_SPAWN = ResourceLocation.fromNamespaceAndPath("fortifications", "attacker_spawn");
 
     private FortificationBlockRules() {
     }

@@ -2,9 +2,9 @@
 
 ## Repository scope
 
-- The active War Day project is `Warday-Mod/Warday`.
-- The Fortifications project is `Fortifications Mod/Fortifications Mod`.
-- Read `HANDOFF.md` before changing either project; it describes the current implementation, known risks, and build commands.
+- The active combined Fortifications and War Day project is `Fortifications Mod/Fortifications Mod`.
+- `Warday-Mod/Warday` is retained only as pre-merge rollback/reference source. Do not implement new work there unless the user explicitly asks to restore the standalone mod.
+- Read `HANDOFF.md` before changing the combined project; it describes the current implementation, known risks, and build commands.
 - Keep `HANDOFF.md` current whenever substantive work changes implementation state, verification evidence, known risks, active/blocked work, or the recommended next steps. Remove or revise stale statements instead of only appending new notes.
 - Preserve unrelated user changes. Do not reset, discard, or overwrite work outside the task being handled.
 
@@ -36,11 +36,9 @@
 
 ## Verification expectations
 
-- Build the changed project after each completed fix. Warday currently expects `gradle build` from `Warday-Mod/Warday`; Fortifications uses `.\gradlew.bat build` from `Fortifications Mod/Fortifications Mod`.
-- After every successful build, update the corresponding distributable jar in `MYTH MODS FOR DEREK` before reporting the build complete:
-  - copy `Warday-Mod/Warday/build/libs/warday-1.0.0.jar` to `MYTH MODS FOR DEREK/warday-1.0.0.jar` after a Warday build;
-  - copy `Fortifications Mod/Fortifications Mod/build/libs/fortifications-1.0.0.jar` to `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` after a Fortifications build.
-- Replace only the matching jar; do not alter other files in `MYTH MODS FOR DEREK`. Verify the source and copied jar have the same size or cryptographic hash, and mention the refreshed distributable in the completion report.
+- Build the combined project after each completed fix with `.\gradlew.bat build` from `Fortifications Mod/Fortifications Mod`.
+- After every successful build, copy `Fortifications Mod/Fortifications Mod/build/libs/fortifications-1.0.0.jar` to `MYTH MODS FOR DEREK/fortifications-1.0.0.jar` before reporting the build complete.
+- The distributable bundle must contain only the combined `fortifications-1.0.0.jar`; do not recreate `warday-1.0.0.jar`. Do not alter other files in `MYTH MODS FOR DEREK`. Verify the source and copied jar have the same size or cryptographic hash, and mention the refreshed distributable in the completion report.
 - Prefer focused automated coverage for state transitions and calculations, but do not treat compilation alone as proof of Minecraft runtime behavior.
 - For gameplay changes, record a concise manual test recipe and result beneath the completed queue item.
 - Recheck match end, death/respawn, logout/reconnect, and server-restart behavior whenever a change touches persisted event or player state.

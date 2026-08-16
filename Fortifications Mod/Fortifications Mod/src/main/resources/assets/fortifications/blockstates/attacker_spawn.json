@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "fortifications:block/attacker_spawn"
+    }
+  }
+}

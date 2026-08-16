@@ -1,5 +1,8 @@
 {
-  "itemGroup.fortifications": "Fortifications Mod",
+  "itemGroup.fortifications": "Fortifications",
+  "block.fortifications.nexus": "Nexus",
+  "block.fortifications.forward_marker": "Forward Marker",
+  "block.fortifications.attacker_spawn": "Attacker Spawn",
   "block.fortifications.fort_chest": "The FortChest",
   "container.fortifications.fort_chest": "The FortChest",
   "message.fortifications.fort_chest.bound": "FortChest linked to FTB team %s.",

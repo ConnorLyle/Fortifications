@@ -1,6 +1,7 @@
 package com.example.fortifications.network;
 
 import com.example.fortifications.FortificationsMod;
+import com.trove.warday.WarDayNetwork;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -14,9 +15,9 @@ public final class FortificationsNetwork {
 
     @SubscribeEvent
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        event.registrar("1")
-                .optional()
+        var registrar = event.registrar("1")
                 .playToClient(EqualbreakSyncPayload.TYPE, EqualbreakSyncPayload.STREAM_CODEC, EqualbreakSyncPayload::handle);
+        WarDayNetwork.registerPayloads(registrar);
     }
 
     public static void syncToAllPlayers() {

@@ -1,5 +1,7 @@
 package com.example.fortifications;
 
+import com.trove.warday.WarDayMod;
+
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.RangedAttribute;
@@ -56,6 +58,7 @@ public class FortificationsMod {
         BLOCK_ENTITY_TYPES.register(modEventBus);
         ATTRIBUTES.register(modEventBus);
         modEventBus.register(this);
+        WarDayMod.initialize(modEventBus, container);
     }
 
     @SubscribeEvent
