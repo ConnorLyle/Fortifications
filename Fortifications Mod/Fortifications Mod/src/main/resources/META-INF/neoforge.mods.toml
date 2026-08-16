@@ -76,3 +76,10 @@ config="fortifications.mixins.json"
     versionRange="[1,)"
     ordering="AFTER"
     side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="puffish_skills"
+    type="required"
+    versionRange="[0.18.3,0.19)"
+    ordering="AFTER"
+    side="BOTH"

@@ -7,6 +7,8 @@ import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.RangedAttribute;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Rarity;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -35,6 +37,10 @@ public class FortificationsMod {
             () -> new FortChestBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.CHEST))
     );
     public static final DeferredItem<BlockItem> FORT_CHEST_ITEM = ITEMS.registerSimpleBlockItem("fort_chest", FORT_CHEST);
+    public static final DeferredItem<ClassResetTokenItem> CLASS_RESET_TOKEN = ITEMS.register(
+            "class_reset_token",
+            () -> new ClassResetTokenItem(new Item.Properties().stacksTo(16).rarity(Rarity.RARE))
+    );
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<FortChestBlockEntity>> FORT_CHEST_BLOCK_ENTITY =
             BLOCK_ENTITY_TYPES.register(
                     "fort_chest",
@@ -58,6 +64,7 @@ public class FortificationsMod {
         BLOCK_ENTITY_TYPES.register(modEventBus);
         ATTRIBUTES.register(modEventBus);
         modEventBus.register(this);
+        ClassResetService.initialize();
         WarDayMod.initialize(modEventBus, container);
     }
 
@@ -65,6 +72,9 @@ public class FortificationsMod {
     public void onBuildCreativeTab(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey().equals(CreativeModeTabs.FUNCTIONAL_BLOCKS)) {
             event.accept(FORT_CHEST_ITEM.get());
+        }
+        if (event.getTabKey().equals(CreativeModeTabs.TOOLS_AND_UTILITIES)) {
+            event.accept(CLASS_RESET_TOKEN.get());
         }
     }
 

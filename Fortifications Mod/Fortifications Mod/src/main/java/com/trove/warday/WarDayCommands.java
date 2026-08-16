@@ -250,9 +250,8 @@ public class WarDayCommands {
         }
 
         giveOrDrop(player, new ItemStack(WarDayMod.NEXUS_ITEM.get()));
-        giveOrDrop(player, new ItemStack(WarDayMod.FORWARD_MARKER_ITEM.get()));
         source.sendSuccess(() -> message(ChatFormatting.GREEN,
-                "Added the defender nexus and forward marker. Attacker terrain and spawn are automatic."), true);
+                "Added the defender nexus. Battlefield terrain and attacker spawns are automatic."), true);
         return 1;
     }
 
@@ -293,15 +292,14 @@ public class WarDayCommands {
         source.sendSuccess(() -> message(ChatFormatting.AQUA,
                 "War Day validation for " + WarDayConfig.TEAM_A_NAME.get() + " vs " + WarDayConfig.TEAM_B_NAME.get()), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
-                "Copied defender base rotates around its nexus so the forward marker faces the attacker side."), false);
+                "The copied battlefield keeps its original world orientation around the defender nexus."), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "Scanning loaded configured-team claims within " + context.radius() + " blocks around "
                         + context.level().dimension().location() + " " + formatPos(context.center())), false);
 
         reportBlocks(source, "nexus", context.nexuses());
-        reportBlocks(source, "forward marker", context.forwardMarkers());
 
-        TeamValidation teamAValidation = validateTeamMarkers(context.teamA(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
+        TeamValidation teamAValidation = validateTeamNexus(context.teamA(), context.nexuses(), context.chunkManager());
         reportTeamValidation(source, teamAValidation);
 
         if (teamAValidation.passed()) {
@@ -313,7 +311,7 @@ public class WarDayCommands {
         }
 
         source.sendFailure(message(ChatFormatting.RED,
-                "Validation failed: fix the team-owned nexus/forward marker counts or claim cluster placement."));
+                "Validation failed: place exactly one team-owned nexus in a connected claim cluster."));
         return 0;
     }
 
@@ -331,13 +329,13 @@ public class WarDayCommands {
                 "Scanning loaded configured-team claims within " + context.radius() + " blocks around "
                         + context.level().dimension().location() + " " + formatPos(context.center())), false);
 
-        TeamValidation teamAValidation = validateTeamMarkers(context.teamA(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
+        TeamValidation teamAValidation = validateTeamNexus(context.teamA(), context.nexuses(), context.chunkManager());
         reportTeamScan(source, teamAValidation, context.chunkManager());
         reportGuardrails(source, teamAValidation, context.chunkManager());
 
         if (!teamAValidation.passed()) {
             source.sendFailure(message(ChatFormatting.RED,
-                    "Scan could not resolve the defender base. Run /warday validate for marker-specific failures."));
+                    "Scan could not resolve the defender base. Run /warday validate for nexus-specific failures."));
             return 0;
         }
 
@@ -1787,6 +1785,10 @@ public class WarDayCommands {
                 .equals(ResourceLocation.fromNamespaceAndPath("fortifications", "fort_chest"));
     }
 
+    private static boolean isRetiredForwardMarker(BlockState state) {
+        return state.is(WarDayMod.FORWARD_MARKER.get());
+    }
+
     private static int clearAndDiscardWarDayEntities(ServerLevel level) {
         List<Entity> entities = new ArrayList<>();
         for (Entity entity : level.getAllEntities()) {
@@ -2833,12 +2835,12 @@ public class WarDayCommands {
         }
 
         ScanContext context = scanContext.get();
-        TeamValidation validation = validateTeamMarkers(
-                context.teamA(), context.nexuses(), context.forwardMarkers(), context.chunkManager());
+        TeamValidation validation = validateTeamNexus(
+                context.teamA(), context.nexuses(), context.chunkManager());
         if (!validation.passed()) {
             reportTeamValidation(source, validation);
             source.sendFailure(message(ChatFormatting.RED,
-                    "Prepare requires the defender nexus and forward marker to pass validation."));
+                    "Prepare requires exactly one team-owned defender nexus in a connected claim cluster."));
             return Optional.empty();
         }
 
@@ -2851,7 +2853,7 @@ public class WarDayCommands {
         if (defenderPlan.isEmpty()) {
             int arenaSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2;
             source.sendFailure(message(ChatFormatting.RED,
-                    "The rotated defender claim is too large to fit fully inside the nexus-centered "
+                    "The defender claim is too large to fit fully inside the nexus-centered "
                             + arenaSize + "x" + arenaSize + " arena."));
             return Optional.empty();
         }
@@ -2908,15 +2910,14 @@ public class WarDayCommands {
         }
 
         List<LocatedBlock> nexuses = new ArrayList<>();
-        List<LocatedBlock> forwardMarkers = new ArrayList<>();
         ServerLevel level = source.getLevel();
         BlockPos center = BlockPos.containing(source.getPosition());
         int radius = WarDayConfig.VALIDATION_RADIUS_BLOCKS.getAsInt();
         List<Team> scanTeams = new ArrayList<>();
         scanTeams.add(teamA.get());
-        scanArea(level, center, radius, chunkManager, scanTeams, nexuses, forwardMarkers);
+        scanArea(level, center, radius, chunkManager, scanTeams, nexuses);
 
-        return Optional.of(new ScanContext(level, center, radius, chunkManager, teamA.get(), teamB, nexuses, forwardMarkers));
+        return Optional.of(new ScanContext(level, center, radius, chunkManager, teamA.get(), teamB, nexuses));
     }
 
     private static Optional<Team> findTeamByConfiguredName(TeamManager teamManager, String configuredName) {
@@ -2941,8 +2942,7 @@ public class WarDayCommands {
             int radius,
             ClaimedChunkManager chunkManager,
             Collection<Team> scanTeams,
-            List<LocatedBlock> nexuses,
-            List<LocatedBlock> forwardMarkers
+            List<LocatedBlock> nexuses
     ) {
         int minBlockX = center.getX() - radius;
         int maxBlockX = center.getX() + radius;
@@ -2983,8 +2983,7 @@ public class WarDayCommands {
                         chunkMaxX,
                         chunkMinZ,
                         chunkMaxZ,
-                        nexuses,
-                        forwardMarkers
+                        nexuses
                 );
             }
         }
@@ -2997,8 +2996,7 @@ public class WarDayCommands {
             int maxX,
             int minZ,
             int maxZ,
-            List<LocatedBlock> nexuses,
-            List<LocatedBlock> forwardMarkers
+            List<LocatedBlock> nexuses
     ) {
         Optional<Team> claimedOwner = Optional.of(owner);
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -3009,34 +3007,27 @@ public class WarDayCommands {
                     BlockState state = level.getBlockState(pos);
                     if (state.is(WarDayMod.NEXUS.get())) {
                         nexuses.add(new LocatedBlock(level.dimension(), pos.immutable(), null, claimedOwner));
-                    } else if (state.is(WarDayMod.FORWARD_MARKER.get())) {
-                        Direction facing = state.getValue(ForwardMarkerBlock.FACING);
-                        forwardMarkers.add(new LocatedBlock(level.dimension(), pos.immutable(), facing, claimedOwner));
                     }
                 }
             }
         }
     }
 
-    private static TeamValidation validateTeamMarkers(
+    private static TeamValidation validateTeamNexus(
             Team team,
             List<LocatedBlock> nexuses,
-            List<LocatedBlock> forwardMarkers,
             ClaimedChunkManager chunkManager
     ) {
         List<LocatedBlock> teamNexuses = nexuses.stream().filter(block -> block.isOwnedBy(team)).toList();
-        List<LocatedBlock> teamForwardMarkers = forwardMarkers.stream().filter(block -> block.isOwnedBy(team)).toList();
         int clusterSize = 0;
-        boolean markerInCluster = false;
 
         if (teamNexuses.size() == 1) {
             Set<ChunkDimPos> cluster = connectedClaimCluster(team, teamNexuses.getFirst().chunkDimPos(), chunkManager);
             clusterSize = cluster.size();
-            markerInCluster = teamForwardMarkers.size() == 1 && cluster.contains(teamForwardMarkers.getFirst().chunkDimPos());
         }
 
-        boolean passed = teamNexuses.size() == 1 && teamForwardMarkers.size() == 1 && markerInCluster;
-        return new TeamValidation(team, teamNexuses, teamForwardMarkers, clusterSize, markerInCluster, passed);
+        boolean passed = teamNexuses.size() == 1 && clusterSize > 0;
+        return new TeamValidation(team, teamNexuses, clusterSize, passed);
     }
 
     private static Set<ChunkDimPos> connectedClaimCluster(Team team, ChunkDimPos start, ClaimedChunkManager chunkManager) {
@@ -3092,9 +3083,7 @@ public class WarDayCommands {
         source.sendSuccess(() -> message(color,
                 validation.team().getName().getString()
                         + ": nexuses=" + validation.nexuses().size()
-                        + ", forwardMarkers=" + validation.forwardMarkers().size()
-                        + ", nexusClusterChunks=" + validation.clusterSize()
-                        + ", markerInNexusCluster=" + validation.markerInCluster()), false);
+                        + ", nexusClusterChunks=" + validation.clusterSize()), false);
     }
 
     private static void reportTeamScan(CommandSourceStack source, TeamValidation validation, ClaimedChunkManager chunkManager) {
@@ -3104,7 +3093,6 @@ public class WarDayCommands {
         }
 
         LocatedBlock nexus = validation.nexuses().getFirst();
-        LocatedBlock forwardMarker = validation.forwardMarkers().getFirst();
         Set<ChunkDimPos> cluster = connectedClaimCluster(validation.team(), nexus.chunkDimPos(), chunkManager);
         ClusterBounds bounds = ClusterBounds.from(cluster);
 
@@ -3119,8 +3107,6 @@ public class WarDayCommands {
                 "- footprint: " + bounds.blockWidth() + " x " + bounds.blockDepth() + " blocks"), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "- nexus: " + formatPos(nexus.pos())), false);
-        source.sendSuccess(() -> message(ChatFormatting.GRAY,
-                "- forward marker: " + formatPos(forwardMarker.pos()) + " facing " + forwardMarker.facing()), false);
     }
 
     private static void reportGuardrails(CommandSourceStack source, TeamValidation validation, ClaimedChunkManager chunkManager) {
@@ -3195,9 +3181,6 @@ public class WarDayCommands {
                 "- rotation: " + plan.rotationDescription()), false);
         source.sendSuccess(() -> message(ChatFormatting.GRAY,
                 "- anchor offset from source min: " + formatPos(plan.anchorOffset())), false);
-        plan.baseArea().ifPresent(baseArea -> source.sendSuccess(() -> message(ChatFormatting.GRAY,
-                "- forward marker offset from source min: " + formatPos(plan.offsetFromSourceMin(baseArea.forwardMarker().pos()))
-                        + " facing " + baseArea.forwardMarker().facing()), false));
     }
 
     private static CopyCheck checkDestinationEmpty(ServerLevel sourceLevel, ServerLevel targetLevel, PlacementPlan plan) {
@@ -3220,7 +3203,7 @@ public class WarDayCommands {
                         for (int y = sectionY; y < sectionMaxY; y++) {
                         BlockPos sourcePos = new BlockPos(x, y, z);
                         BlockState sourceState = sourceChunk.getBlockState(sourcePos);
-                        if (sourceState.isAir()) {
+                        if (sourceState.isAir() || isRetiredForwardMarker(sourceState)) {
                             continue;
                         }
 
@@ -3271,7 +3254,7 @@ public class WarDayCommands {
                         for (int y = sectionY; y < sectionMaxY; y++) {
                         BlockPos sourcePos = new BlockPos(x, y, z);
                         BlockState sourceState = sourceChunk.getBlockState(sourcePos);
-                        if (sourceState.isAir()) {
+                        if (sourceState.isAir() || isRetiredForwardMarker(sourceState)) {
                             continue;
                         }
 
@@ -3858,9 +3841,7 @@ public class WarDayCommands {
     private record TeamValidation(
             Team team,
             List<LocatedBlock> nexuses,
-            List<LocatedBlock> forwardMarkers,
             int clusterSize,
-            boolean markerInCluster,
             boolean passed
     ) {
     }
@@ -3872,8 +3853,7 @@ public class WarDayCommands {
             ClaimedChunkManager chunkManager,
             Team teamA,
             Optional<Team> teamB,
-            List<LocatedBlock> nexuses,
-            List<LocatedBlock> forwardMarkers
+            List<LocatedBlock> nexuses
     ) {
     }
 
@@ -3914,16 +3894,14 @@ public class WarDayCommands {
     private record BaseArea(
             Team team,
             LocatedBlock nexus,
-            LocatedBlock forwardMarker,
             Set<ChunkDimPos> cluster,
             ClusterBounds bounds,
             ResourceKey<Level> dimension
     ) {
         private static BaseArea from(TeamValidation validation, ClaimedChunkManager chunkManager) {
             LocatedBlock nexus = validation.nexuses().getFirst();
-            LocatedBlock forwardMarker = validation.forwardMarkers().getFirst();
             Set<ChunkDimPos> cluster = connectedClaimCluster(validation.team(), nexus.chunkDimPos(), chunkManager);
-            return new BaseArea(validation.team(), nexus, forwardMarker, cluster, ClusterBounds.from(cluster), nexus.dimension());
+            return new BaseArea(validation.team(), nexus, cluster, ClusterBounds.from(cluster), nexus.dimension());
         }
     }
 
@@ -4301,7 +4279,7 @@ public class WarDayCommands {
             }
 
             BlockState sourceState = blockCursor.currentState();
-            if (sourceState.isAir()) {
+            if (sourceState.isAir() || isRetiredForwardMarker(sourceState)) {
                 return true;
             }
             BlockPos sourcePos = blockCursor.currentPos();
@@ -4399,7 +4377,7 @@ public class WarDayCommands {
             }
 
             BlockState sourceState = blockCursor.currentState();
-            if (sourceState.isAir()) {
+            if (sourceState.isAir() || isRetiredForwardMarker(sourceState)) {
                 return true;
             }
             BlockPos sourcePos = blockCursor.currentPos();
@@ -4886,8 +4864,6 @@ public class WarDayCommands {
             Optional<BaseArea> baseArea,
             Optional<BlockPos> automaticSpawnTarget
     ) {
-        private static final Direction DEFENDER_TARGET_FACING = Direction.WEST;
-
         private static Optional<PlacementPlan> defenderCentered(BaseArea baseArea) {
             PlacementPlan centered = new PlacementPlan(
                     baseArea.team().getName().getString(),
@@ -5063,16 +5039,11 @@ public class WarDayCommands {
         }
 
         private Rotation rotation() {
-            return baseArea
-                    .map(area -> rotationBetween(area.forwardMarker().facing(), DEFENDER_TARGET_FACING))
-                    .orElse(Rotation.NONE);
+            return Rotation.NONE;
         }
 
         private String rotationDescription() {
-            return baseArea
-                    .map(area -> area.forwardMarker().facing().getName() + " -> " + DEFENDER_TARGET_FACING.getName()
-                            + " (" + rotationDegrees() + " degrees)")
-                    .orElse("none");
+            return "none (source orientation preserved)";
         }
 
         private int rotationDegrees() {
@@ -5153,27 +5124,6 @@ public class WarDayCommands {
                 case CLOCKWISE_90 -> x;
                 case CLOCKWISE_180 -> -z;
                 case COUNTERCLOCKWISE_90 -> -x;
-            };
-        }
-
-        private static Rotation rotationBetween(Direction source, Direction target) {
-            int turns = Math.floorMod(horizontalIndex(target) - horizontalIndex(source), 4);
-            return switch (turns) {
-                case 0 -> Rotation.NONE;
-                case 1 -> Rotation.CLOCKWISE_90;
-                case 2 -> Rotation.CLOCKWISE_180;
-                case 3 -> Rotation.COUNTERCLOCKWISE_90;
-                default -> Rotation.NONE;
-            };
-        }
-
-        private static int horizontalIndex(Direction direction) {
-            return switch (direction) {
-                case NORTH -> 0;
-                case EAST -> 1;
-                case SOUTH -> 2;
-                case WEST -> 3;
-                default -> 0;
             };
         }
 
