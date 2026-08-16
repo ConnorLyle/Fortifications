@@ -42,6 +42,14 @@ public final class WarDayAttackerTerrainPlanTest {
         expect(false, WarDayAttackerTerrainPlan.insideArena(125, 0, 125), "positive border excluded");
         expect(false, WarDayAttackerTerrainPlan.insideArena(-126, 0, 125), "below negative border");
 
+        expect(256, WarDayAttackerTerrainPlan.arenaDiameter(128), "world border matches arena diameter");
+        byte arenaMapScale = WarDayAttackerTerrainPlan.arenaMapScale(128);
+        expect(1, (int)arenaMapScale, "256-block arena uses vanilla map scale one");
+        expect(-128, WarDayAttackerTerrainPlan.mapMinimumBlock(0, arenaMapScale),
+                "arena map begins at the negative border");
+        expect(127, WarDayAttackerTerrainPlan.mapMaximumBlock(0, arenaMapScale),
+                "arena map ends at the positive border column");
+
         expect(240, WarDayAttackerTerrainPlan.maximumArenaSearchRadius(112, -112, 128),
                 "corner fallback reaches the far side of the complete arena");
         expect(128, WarDayAttackerTerrainPlan.maximumArenaSearchRadius(0, 0, 128),
@@ -93,6 +101,17 @@ public final class WarDayAttackerTerrainPlanTest {
         expect(-9, negativeWindow.minChunkZ(), "negative z floor division");
         expect(7, negativeWindow.maxChunkZ(), "negative z maximum chunk");
         expect(289, negativeWindow.chunkCount(), "unaligned nexus-centered window chunk count");
+
+        int emptyEntityPasses = WarDayEntityClearVerification.nextEmptyPasses(0, 4);
+        expect(0, emptyEntityPasses, "discarded entities reset empty verification passes");
+        emptyEntityPasses = WarDayEntityClearVerification.nextEmptyPasses(emptyEntityPasses, 0);
+        expect(false, WarDayEntityClearVerification.isVerified(emptyEntityPasses),
+                "one empty entity pass is not enough");
+        emptyEntityPasses = WarDayEntityClearVerification.nextEmptyPasses(emptyEntityPasses, 0);
+        expect(true, WarDayEntityClearVerification.isVerified(emptyEntityPasses),
+                "two consecutive empty entity passes complete verification");
+        emptyEntityPasses = WarDayEntityClearVerification.nextEmptyPasses(emptyEntityPasses, 1);
+        expect(0, emptyEntityPasses, "a later entity resets completed verification");
     }
 
     private static void expect(Object expected, Object actual, String label) {

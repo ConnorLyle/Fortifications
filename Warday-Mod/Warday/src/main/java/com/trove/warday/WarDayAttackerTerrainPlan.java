@@ -140,6 +140,32 @@ public final class WarDayAttackerTerrainPlan {
                 && targetZ >= -halfSizeBlocks && targetZ < halfSizeBlocks;
     }
 
+    public static int arenaDiameter(int halfSizeBlocks) {
+        return Math.max(1, halfSizeBlocks) * 2;
+    }
+
+    public static byte arenaMapScale(int halfSizeBlocks) {
+        int diameter = arenaDiameter(halfSizeBlocks);
+        int scale = 0;
+        int coverage = 128;
+        while (coverage < diameter && scale < 4) {
+            scale++;
+            coverage *= 2;
+        }
+        if (coverage != diameter) {
+            throw new IllegalArgumentException("Arena diameter must exactly match a vanilla map scale");
+        }
+        return (byte)scale;
+    }
+
+    public static int mapMinimumBlock(int center, byte scale) {
+        return center - (64 << scale);
+    }
+
+    public static int mapMaximumBlock(int center, byte scale) {
+        return center + (64 << scale) - 1;
+    }
+
     public static int maximumArenaSearchRadius(int preferredX, int preferredZ, int halfSizeBlocks) {
         int halfSize = Math.max(1, halfSizeBlocks);
         int min = -halfSize;

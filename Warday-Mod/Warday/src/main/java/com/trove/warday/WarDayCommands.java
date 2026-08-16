@@ -78,6 +78,8 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.saveddata.maps.MapId;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Rotation;
@@ -136,6 +138,7 @@ public class WarDayCommands {
     private static final String MATCH_ENTITY_BATCH = "warday_match_entity_batch";
     private static final String PREPARED_DECORATIVE_MARKER = "warday_prepared_decorative";
     private static final String MATCH_BLOCK_DATA_KEY = "WardayTeamBlock";
+    private static final String MATCH_MAP_DATA_KEY = "WardayArenaMap";
     private static final String DEFENDER_MATCH_BLOCK_MARKER = "defender";
     private static final String ATTACKER_MATCH_BLOCK_MARKER = "attacker";
     private static final ResourceLocation ENDER_POUCH_ID = ResourceLocation.fromNamespaceAndPath("enderstorage", "ender_pouch");
@@ -160,6 +163,7 @@ public class WarDayCommands {
     private static MinecraftServer rosterScoreboardServer;
     private static String lastRosterSignature = "";
     private PreparationJob preparationJob;
+    private ClearJob clearJob;
 
     @SubscribeEvent
     public void registerCommands(RegisterCommandsEvent event) {
@@ -180,6 +184,8 @@ public class WarDayCommands {
                         .executes(context -> start(context.getSource())))
                 .then(Commands.literal("end")
                         .executes(context -> end(context.getSource())))
+                .then(Commands.literal("clear")
+                        .executes(context -> clearDimension(context.getSource())))
                 .then(Commands.literal("prepare")
                         .executes(context -> preparePreview(context.getSource()))
                         .then(Commands.literal("confirm")
@@ -212,9 +218,9 @@ public class WarDayCommands {
             String label,
             String name
     ) {
-        if (preparationJob != null) {
+        if (preparationJob != null || clearJob != null) {
             source.sendFailure(message(ChatFormatting.YELLOW,
-                    "Team configuration cannot change while preparation is running. Cancel or finish preparation first."));
+                    "Team configuration cannot change while an arena preparation or clear job is running."));
             return 0;
         }
         String trimmed = name.trim();
@@ -346,6 +352,11 @@ public class WarDayCommands {
                     "A War Day preparation job is already running. Use /warday prepare status or /warday prepare cancel."));
             return 0;
         }
+        if (clearJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "The War Day dimension is still being cleared. Use /warday status for progress."));
+            return 0;
+        }
 
         Optional<PreparationContext> contextResult = resolvePreparationContext(source);
         if (contextResult.isEmpty()) {
@@ -383,6 +394,11 @@ public class WarDayCommands {
         if (preparationJob != null) {
             source.sendFailure(message(ChatFormatting.YELLOW,
                     "A War Day preparation job is already running. Use /warday prepare status or /warday prepare cancel."));
+            return 0;
+        }
+        if (clearJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "The War Day dimension is still being cleared. Use /warday status for progress."));
             return 0;
         }
 
@@ -436,6 +452,50 @@ public class WarDayCommands {
         return 1;
     }
 
+    private int clearDimension(CommandSourceStack source) {
+        if (preparationJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "War Day preparation is running. Cancel or finish it before clearing the dimension."));
+            return 0;
+        }
+        if (clearJob != null) {
+            clearJob.reportStatus(source);
+            return 0;
+        }
+
+        WarDayState state = WarDayState.get(source.getServer());
+        if (state.isActive()) {
+            source.sendFailure(message(ChatFormatting.RED,
+                    "War Day is active. Use /warday end before clearing the dimension."));
+            return 0;
+        }
+
+        Optional<ResourceKey<Level>> dimensionKey = warDayDimensionKey(source);
+        if (dimensionKey.isEmpty()) {
+            return 0;
+        }
+        ServerLevel level = source.getServer().getLevel(dimensionKey.get());
+        if (level == null) {
+            source.sendFailure(message(ChatFormatting.RED,
+                    "War Day dimension is not loaded: " + WarDayConfig.WAR_DAY_DIMENSION.get()));
+            return 0;
+        }
+
+        state.invalidatePrepared();
+        configureWorldBorder(level);
+        clearJob = new ClearJob(source, level);
+        int playersPresent = level.players().size();
+        source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                "War Day dimension clear started. The full 256x256 arena and all loaded non-player entities "
+                        + "will be removed in bounded batches; use /warday status for progress."), true);
+        if (playersPresent > 0) {
+            source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                    playersPresent + " player(s) are inside the War Day dimension. Players will not be removed, "
+                            + "but the terrain beneath them will be cleared."), true);
+        }
+        return 1;
+    }
+
     private int status(CommandSourceStack source) {
         WarDayState state = WarDayState.get(source.getServer());
         Optional<ResourceKey<Level>> dimensionKey = warDayDimensionKey(source);
@@ -452,6 +512,9 @@ public class WarDayCommands {
                 "Active: " + state.isActive()), false);
         if (preparationJob != null) {
             preparationJob.reportStatus(source);
+        }
+        if (clearJob != null) {
+            clearJob.reportStatus(source);
         }
 
         if (state.isPrepared()) {
@@ -483,10 +546,10 @@ public class WarDayCommands {
             if (state.isActive()) {
                 source.sendSuccess(() -> message(ChatFormatting.YELLOW,
                         "Operator override: /warday end immediately restores players"), false);
-            } else if (preparationJob == null) {
+            } else if (preparationJob == null && clearJob == null) {
                 source.sendSuccess(() -> message(ChatFormatting.GREEN, "Next command: /warday start"), false);
             }
-        } else if (preparationJob == null) {
+        } else if (preparationJob == null && clearJob == null) {
             source.sendSuccess(() -> message(ChatFormatting.YELLOW, "Next command: /warday prepare confirm"), false);
         }
 
@@ -497,6 +560,11 @@ public class WarDayCommands {
         if (preparationJob != null) {
             source.sendFailure(message(ChatFormatting.YELLOW,
                     "War Day preparation is still running. Use /warday prepare status or /warday prepare cancel."));
+            return 0;
+        }
+        if (clearJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "The War Day dimension is still being cleared. Use /warday status for progress."));
             return 0;
         }
         WarDayState state = WarDayState.get(source.getServer());
@@ -586,6 +654,7 @@ public class WarDayCommands {
         long matchDurationTicks = WarDayConfig.MATCH_DURATION_SECONDS.getAsInt() * 20L;
         long matchEndGameTime = warDayLevel.getGameTime() + matchDurationTicks;
         String previousSidebarObjective = currentSidebarObjectiveName(source.getServer());
+        MapId arenaMapId = createArenaMap(warDayLevel);
         state.start(
                 snapshots,
                 defenderIds,
@@ -596,7 +665,8 @@ public class WarDayCommands {
                 originalKeepInventory,
                 originalWorldBorderCenterX,
                 originalWorldBorderCenterZ,
-                originalWorldBorderSize
+                originalWorldBorderSize,
+                arenaMapId.id()
         );
 
         warDayLevel.getGameRules().getRule(GameRules.RULE_KEEPINVENTORY).set(true, source.getServer());
@@ -638,6 +708,7 @@ public class WarDayCommands {
                 teleportPlayer(player, warDayLevel, attackerSpawns.getFirst().offset(0, 11, 0));
                 spectators++;
             }
+            ensureArenaMap(player, state);
         }
         syncMatchTimerBossBar(source.getServer(), warDayLevel, state, true);
         syncWarDaySidebar(source.getServer(), state, warDayLevel.getGameTime(), true);
@@ -805,6 +876,7 @@ public class WarDayCommands {
     @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
         preparationJob = null;
+        clearJob = null;
         clearRapidBreakPenalties(event.getServer());
         DIG_HISTORY.clear();
     }
@@ -814,6 +886,11 @@ public class WarDayCommands {
         if (preparationJob != null) {
             if (preparationJob.tick(event.getServer())) {
                 preparationJob = null;
+            }
+        }
+        if (clearJob != null) {
+            if (clearJob.tick(event.getServer())) {
+                clearJob = null;
             }
         }
 
@@ -1599,6 +1676,7 @@ public class WarDayCommands {
         hideMatchTimerBossBar(server);
         clearRapidBreakPenalties(server);
         int restored = 0;
+        int issuedArenaMapId = state.arenaMapId().orElse(-1);
         Map<UUID, WarDayState.PlayerSnapshot> snapshots = state.savedPlayers();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             WarDayState.PlayerSnapshot snapshot = snapshots.get(player.getUUID());
@@ -1612,6 +1690,7 @@ public class WarDayCommands {
                             "Inventory restoration could not be verified. Your recovery snapshot was retained; contact an operator."));
                 }
             }
+            removeArenaMap(player, issuedArenaMapId);
         }
 
         if (state.keepInventoryCaptured()) {
@@ -1630,7 +1709,7 @@ public class WarDayCommands {
                     entitiesDiscarded,
                     level.dimension().location()
             );
-            restoreWorldBorder(level, state);
+            configureWorldBorder(level);
         });
         restoreWarDaySidebar(server, state);
         state.end();
@@ -1711,7 +1790,7 @@ public class WarDayCommands {
     private static int clearAndDiscardWarDayEntities(ServerLevel level) {
         List<Entity> entities = new ArrayList<>();
         for (Entity entity : level.getAllEntities()) {
-            if (!(entity instanceof ServerPlayer)) {
+            if (!(entity instanceof ServerPlayer) && !entity.isRemoved()) {
                 entities.add(entity);
             }
         }
@@ -1751,7 +1830,11 @@ public class WarDayCommands {
 
     private static void giveRespawnMatchBlocks(ServerPlayer player) {
         WarDayState state = WarDayState.get(player.getServer());
-        if (!state.isCombatActive() || !FTBTeamsAPI.api().isManagerLoaded()) {
+        if (!state.isCombatActive()) {
+            return;
+        }
+        ensureArenaMap(player, state);
+        if (!FTBTeamsAPI.api().isManagerLoaded()) {
             return;
         }
 
@@ -1770,6 +1853,7 @@ public class WarDayCommands {
     }
 
     private static void applyActiveMatchRole(ServerPlayer player, WarDayState state) {
+        ensureArenaMap(player, state);
         Optional<ParticipantRespawn> participant = participantRespawn(player);
         if (participant.isPresent()) {
             ParticipantRespawn respawn = participant.get();
@@ -2164,9 +2248,70 @@ public class WarDayCommands {
     }
 
     private static void configureWorldBorder(ServerLevel level) {
-        double size = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt() * 2.0D;
+        double size = WarDayAttackerTerrainPlan.arenaDiameter(
+                WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt());
         level.getWorldBorder().setCenter(0.0D, 0.0D);
         level.getWorldBorder().setSize(size);
+    }
+
+    private static MapId createArenaMap(ServerLevel level) {
+        MapId mapId = level.getFreeMapId();
+        level.setMapData(mapId, createArenaMapData(level));
+        return mapId;
+    }
+
+    private static MapItemSavedData createArenaMapData(ServerLevel level) {
+        byte scale = WarDayAttackerTerrainPlan.arenaMapScale(
+                WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt());
+        return MapItemSavedData.createForClient(scale, false, level.dimension());
+    }
+
+    private static void ensureArenaMap(ServerPlayer player, WarDayState state) {
+        Optional<ServerLevel> level = warDayLevel(player.getServer(), state);
+        if (level.isEmpty() || state.arenaMapId().isEmpty()) {
+            return;
+        }
+
+        MapId mapId = new MapId(state.arenaMapId().getAsInt());
+        MapItemSavedData existing = level.get().getMapData(mapId);
+        byte expectedScale = WarDayAttackerTerrainPlan.arenaMapScale(
+                WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt());
+        if (existing == null
+                || existing.centerX != 0
+                || existing.centerZ != 0
+                || existing.scale != expectedScale
+                || !existing.dimension.equals(level.get().dimension())) {
+            level.get().setMapData(mapId, createArenaMapData(level.get()));
+        }
+
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (stack.is(Items.FILLED_MAP) && mapId.equals(stack.get(DataComponents.MAP_ID))) {
+                return;
+            }
+        }
+
+        ItemStack map = new ItemStack(Items.FILLED_MAP);
+        map.set(DataComponents.MAP_ID, mapId);
+        map.set(DataComponents.CUSTOM_NAME,
+                net.minecraft.network.chat.Component.literal("War Day Arena Map").withStyle(ChatFormatting.AQUA));
+        CompoundTag marker = new CompoundTag();
+        marker.putBoolean(MATCH_MAP_DATA_KEY, true);
+        map.set(DataComponents.CUSTOM_DATA, CustomData.of(marker));
+        giveOrDrop(player, map);
+    }
+
+    private static void removeArenaMap(ServerPlayer player, int mapId) {
+        if (mapId < 0) {
+            return;
+        }
+        MapId issuedId = new MapId(mapId);
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (stack.is(Items.FILLED_MAP) && issuedId.equals(stack.get(DataComponents.MAP_ID))) {
+                player.getInventory().setItem(slot, ItemStack.EMPTY);
+            }
+        }
     }
 
     private static boolean isInsideConfiguredMatchBorder(BlockPos pos) {
@@ -2647,6 +2792,7 @@ public class WarDayCommands {
         player.setGameMode(GameType.SURVIVAL);
         ensureInventoryHasAtLeast(
                 player, respawn.matchBlock(), respawn.teamMarker(), MATCH_BLOCK_TARGET_COUNT);
+        ensureArenaMap(player, WarDayState.get(player.getServer()));
     }
 
     private static void openAttackerCornerMenu(ServerPlayer player) {
@@ -3829,6 +3975,171 @@ public class WarDayCommands {
     ) {
     }
 
+    private static List<ChunkPos> configuredArenaChunks() {
+        int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
+        int minChunk = Math.floorDiv(-halfSize, 16);
+        int maxChunk = Math.floorDiv(halfSize - 1, 16);
+        List<ChunkPos> chunks = new ArrayList<>();
+        for (int x = minChunk; x <= maxChunk; x++) {
+            for (int z = minChunk; z <= maxChunk; z++) {
+                chunks.add(new ChunkPos(x, z));
+            }
+        }
+        return List.copyOf(chunks);
+    }
+
+    private static final class ClearJob {
+        private final CommandSourceStack source;
+        private final ServerLevel level;
+        private final List<ChunkPos> chunks = configuredArenaChunks();
+        private ClearPhase phase = ClearPhase.LOADING_CHUNKS;
+        private int chunkIndex;
+        private ArenaBlockCursor arenaCursor;
+        private int blocksWiped;
+        private int entitiesDiscarded;
+        private int consecutiveEmptyEntityPasses;
+        private boolean finished;
+
+        private ClearJob(CommandSourceStack source, ServerLevel level) {
+            this.source = source;
+            this.level = level;
+        }
+
+        private boolean tick(MinecraftServer server) {
+            if (finished) {
+                return true;
+            }
+            if (server != source.getServer()) {
+                fail("Dimension clear stopped because the server instance changed.", null);
+                return true;
+            }
+            if (WarDayState.get(server).isActive()) {
+                fail("Dimension clear stopped because a War Day match became active.", null);
+                return true;
+            }
+
+            long deadline = System.nanoTime() + PREPARATION_TICK_BUDGET_NANOS;
+            int steps = 0;
+            try {
+                boolean continueThisTick = true;
+                while (!finished && continueThisTick && steps < PREPARATION_MAX_STEPS_PER_TICK) {
+                    continueThisTick = step();
+                    steps++;
+                    if ((steps & 63) == 0 && System.nanoTime() >= deadline) {
+                        break;
+                    }
+                }
+            } catch (RuntimeException exception) {
+                fail("Dimension clear failed during " + phase.label + ". Check the server log.", exception);
+            }
+            return finished;
+        }
+
+        private boolean step() {
+            return switch (phase) {
+                case LOADING_CHUNKS -> stepLoadChunk();
+                case CLEARING_ENTITIES -> stepInitialEntityClear();
+                case CLEARING_BLOCKS -> stepClearBlock();
+                case VERIFYING_ENTITIES -> stepVerifyEntities();
+            };
+        }
+
+        private boolean stepLoadChunk() {
+            if (chunkIndex >= chunks.size()) {
+                phase = ClearPhase.CLEARING_ENTITIES;
+                source.sendSuccess(() -> message(ChatFormatting.AQUA,
+                        "All " + chunks.size() + " arena chunks are loaded. Removing non-player entities."), true);
+                return true;
+            }
+            ChunkPos chunk = chunks.get(chunkIndex++);
+            level.getChunk(chunk.x, chunk.z);
+            return false;
+        }
+
+        private boolean stepInitialEntityClear() {
+            entitiesDiscarded += clearAndDiscardWarDayEntities(level);
+            arenaCursor = new ArenaBlockCursor(level, true);
+            phase = ClearPhase.CLEARING_BLOCKS;
+            source.sendSuccess(() -> message(ChatFormatting.AQUA,
+                    "Initial entity pass complete. Wiping the full arena build height in bounded batches."), true);
+            return false;
+        }
+
+        private boolean stepClearBlock() {
+            if (!arenaCursor.advance()) {
+                phase = ClearPhase.VERIFYING_ENTITIES;
+                source.sendSuccess(() -> message(ChatFormatting.AQUA,
+                        "Arena blocks are clear. Verifying across later ticks that no non-player entities remain."), true);
+                return false;
+            }
+            BlockState state = arenaCursor.currentState();
+            if (!state.isAir()) {
+                level.setBlock(arenaCursor.currentPos(), Blocks.AIR.defaultBlockState(), 3);
+                blocksWiped++;
+            }
+            return true;
+        }
+
+        private boolean stepVerifyEntities() {
+            int discardedThisPass = clearAndDiscardWarDayEntities(level);
+            entitiesDiscarded += discardedThisPass;
+            consecutiveEmptyEntityPasses = WarDayEntityClearVerification.nextEmptyPasses(
+                    consecutiveEmptyEntityPasses, discardedThisPass);
+            if (!WarDayEntityClearVerification.isVerified(consecutiveEmptyEntityPasses)) {
+                return false;
+            }
+
+            configureWorldBorder(level);
+            WarDayState.get(source.getServer()).invalidatePrepared();
+            source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                    "War Day dimension clear complete: wiped " + blocksWiped + " blocks and discarded "
+                            + entitiesDiscarded + " non-player entities. The arena is no longer prepared."), true);
+            WarDayMod.LOGGER.info(
+                    "Manual War Day dimension clear wiped {} arena blocks and discarded {} non-player entities from {}",
+                    blocksWiped,
+                    entitiesDiscarded,
+                    level.dimension().location()
+            );
+            finished = true;
+            return false;
+        }
+
+        private void reportStatus(CommandSourceStack output) {
+            String detail = switch (phase) {
+                case LOADING_CHUNKS -> chunkIndex + "/" + chunks.size() + " chunks";
+                case CLEARING_ENTITIES -> "initial entity pass";
+                case CLEARING_BLOCKS -> arenaCursor == null ? "starting" : arenaCursor.progressText();
+                case VERIFYING_ENTITIES -> consecutiveEmptyEntityPasses + "/"
+                        + WarDayEntityClearVerification.REQUIRED_EMPTY_PASSES + " empty verification passes";
+            };
+            output.sendSuccess(() -> message(ChatFormatting.AQUA,
+                    "War Day dimension clear: " + phase.label + " (" + detail + ")"), false);
+        }
+
+        private void fail(String text, RuntimeException exception) {
+            if (exception != null) {
+                WarDayMod.LOGGER.error("War Day dimension clear failed during {}", phase.label, exception);
+            } else {
+                WarDayMod.LOGGER.warn("War Day dimension clear stopped during {}: {}", phase.label, text);
+            }
+            source.sendFailure(message(ChatFormatting.RED, text));
+            finished = true;
+        }
+    }
+
+    private enum ClearPhase {
+        LOADING_CHUNKS("loading arena chunks"),
+        CLEARING_ENTITIES("clearing entities"),
+        CLEARING_BLOCKS("clearing arena blocks"),
+        VERIFYING_ENTITIES("verifying entity cleanup");
+
+        private final String label;
+
+        ClearPhase(String label) {
+            this.label = label;
+        }
+    }
+
     private final class PreparationJob {
         private final CommandSourceStack source;
         private final PreparationContext context;
@@ -3847,7 +4158,8 @@ public class WarDayCommands {
         private ArenaBlockCursor arenaCursor;
         private int destinationBlocksChecked;
         private int arenaBlocksWiped;
-        private int arenaDecorationsCleared;
+        private int arenaEntitiesCleared;
+        private int consecutiveEmptyEntityPasses;
         private final MutableCopyResult terrainCopy = new MutableCopyResult();
         private final MutableCopyResult defenderCopy = new MutableCopyResult();
         private final List<LevelChunk> biomeChunks = new ArrayList<>();
@@ -3862,7 +4174,8 @@ public class WarDayCommands {
             this.attackerArea = context.attackerArea();
             this.attackerPlan = context.attackerPlan();
             this.sourceChunks = sortedChunks(attackerArea.cluster());
-            this.targetChunks = arenaChunks();
+            this.targetChunks = configuredArenaChunks();
+            configureWorldBorder(targetLevel);
             announcePhase("Loading " + sourceChunks.size()
                     + " claim-surrounding source chunks one bounded step at a time.");
         }
@@ -3905,6 +4218,7 @@ public class WarDayCommands {
                 case CHECKING_DEFENDER_DESTINATION -> stepDestinationCheck(context.defenderPlan(), true);
                 case CHECKING_TERRAIN_DESTINATION -> stepDestinationCheck(attackerPlan, false);
                 case CLEARING_ARENA -> stepClearArena();
+                case VERIFYING_CLEAR_ENTITIES -> stepVerifyClearEntities();
                 case COPYING_TERRAIN -> stepCopy(attackerPlan, terrainCopy, true);
                 case COPYING_DEFENDER -> stepCopy(context.defenderPlan(), defenderCopy, false);
                 case APPLYING_BIOME -> stepApplyBiome();
@@ -4019,27 +4333,41 @@ public class WarDayCommands {
         private void beginArenaClearing() {
             WarDayState.get(source.getServer()).invalidatePrepared();
             worldChanged = true;
-            arenaDecorationsCleared = clearDestinationArenaDecorativeEntities(targetLevel);
+            arenaEntitiesCleared = clearAndDiscardWarDayEntities(targetLevel);
             arenaCursor = new ArenaBlockCursor(targetLevel, true);
             phase = PreparationPhase.CLEARING_ARENA;
-            announcePhase("Destination checks complete. Prepared state cleared; wiping the bounded target arena in batches.");
+            announcePhase("Destination checks complete. Prepared state cleared; all non-player entities removed and the full 256x256 dimension is being wiped in batches.");
         }
 
         private boolean stepClearArena() {
             if (!arenaCursor.advance()) {
-                source.sendSuccess(() -> message(ChatFormatting.YELLOW,
-                        "Cleared " + arenaBlocksWiped + " blocks and " + arenaDecorationsCleared
-                                + " hanging entities from the bounded arena."), true);
-                blockCursor = new PlanBlockCursor(sourceLevel, attackerPlan, true);
-                phase = PreparationPhase.COPYING_TERRAIN;
-                announcePhase("Arena cleared. Copying surrounding terrain outside the claimed chunks in bounded batches.");
-                return true;
+                phase = PreparationPhase.VERIFYING_CLEAR_ENTITIES;
+                announcePhase("Arena blocks cleared. Verifying across later ticks that no stale non-player entities remain.");
+                return false;
             }
             BlockState state = arenaCursor.currentState();
             if (!state.isAir()) {
                 targetLevel.setBlock(arenaCursor.currentPos(), Blocks.AIR.defaultBlockState(), 3);
                 arenaBlocksWiped++;
             }
+            return true;
+        }
+
+        private boolean stepVerifyClearEntities() {
+            int discardedThisPass = clearAndDiscardWarDayEntities(targetLevel);
+            arenaEntitiesCleared += discardedThisPass;
+            consecutiveEmptyEntityPasses = WarDayEntityClearVerification.nextEmptyPasses(
+                    consecutiveEmptyEntityPasses, discardedThisPass);
+            if (!WarDayEntityClearVerification.isVerified(consecutiveEmptyEntityPasses)) {
+                return false;
+            }
+
+            source.sendSuccess(() -> message(ChatFormatting.YELLOW,
+                    "Cleared " + arenaBlocksWiped + " blocks and " + arenaEntitiesCleared
+                            + " non-player entities from the full playable War Day dimension."), true);
+            blockCursor = new PlanBlockCursor(sourceLevel, attackerPlan, true);
+            phase = PreparationPhase.COPYING_TERRAIN;
+            announcePhase("Arena verified empty. Copying surrounding terrain outside the claimed chunks in bounded batches.");
             return true;
         }
 
@@ -4199,6 +4527,8 @@ public class WarDayCommands {
                      COPYING_TERRAIN, COPYING_DEFENDER -> blockCursor == null
                         ? "starting" : blockCursor.progressText();
                 case CLEARING_ARENA -> arenaCursor == null ? "starting" : arenaCursor.progressText();
+                case VERIFYING_CLEAR_ENTITIES -> consecutiveEmptyEntityPasses + "/"
+                        + WarDayEntityClearVerification.REQUIRED_EMPTY_PASSES + " empty verification passes";
                 case FINALIZING -> "final checks";
             };
             output.sendSuccess(() -> message(ChatFormatting.AQUA,
@@ -4233,18 +4563,6 @@ public class WarDayCommands {
                     .toList();
         }
 
-        private List<ChunkPos> arenaChunks() {
-            int halfSize = WarDayConfig.MAP_HALF_SIZE_BLOCKS.getAsInt();
-            int minChunk = Math.floorDiv(-halfSize, 16);
-            int maxChunk = Math.floorDiv(halfSize - 1, 16);
-            List<ChunkPos> chunks = new ArrayList<>();
-            for (int x = minChunk; x <= maxChunk; x++) {
-                for (int z = minChunk; z <= maxChunk; z++) {
-                    chunks.add(new ChunkPos(x, z));
-                }
-            }
-            return List.copyOf(chunks);
-        }
     }
 
     private static final class CornerSpawnSearchCursor {
@@ -4338,6 +4656,7 @@ public class WarDayCommands {
         CHECKING_DEFENDER_DESTINATION("checking defender destination"),
         CHECKING_TERRAIN_DESTINATION("checking terrain destination"),
         CLEARING_ARENA("clearing arena"),
+        VERIFYING_CLEAR_ENTITIES("verifying entity cleanup"),
         COPYING_TERRAIN("copying terrain"),
         COPYING_DEFENDER("copying defender base"),
         APPLYING_BIOME("applying arena biome"),

@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 
@@ -46,6 +47,7 @@ public class WarDayState extends SavedData {
     private double originalWorldBorderCenterZ;
     private double originalWorldBorderSize;
     private boolean worldBorderCaptured;
+    private int arenaMapId = -1;
     private UUID nexusMarkerId;
     private UUID matchEntityBatchId;
     private final List<CompoundTag> preparedEntityTemplates = new ArrayList<>();
@@ -97,6 +99,9 @@ public class WarDayState extends SavedData {
         state.originalWorldBorderCenterZ = tag.getDouble("OriginalWorldBorderCenterZ");
         state.originalWorldBorderSize = tag.getDouble("OriginalWorldBorderSize");
         state.worldBorderCaptured = tag.getBoolean("WorldBorderCaptured");
+        if (tag.contains("ArenaMapId")) {
+            state.arenaMapId = tag.getInt("ArenaMapId");
+        }
         if (tag.hasUUID("NexusMarkerId")) {
             state.nexusMarkerId = tag.getUUID("NexusMarkerId");
         }
@@ -185,6 +190,9 @@ public class WarDayState extends SavedData {
         tag.putDouble("OriginalWorldBorderCenterZ", originalWorldBorderCenterZ);
         tag.putDouble("OriginalWorldBorderSize", originalWorldBorderSize);
         tag.putBoolean("WorldBorderCaptured", worldBorderCaptured);
+        if (arenaMapId >= 0) {
+            tag.putInt("ArenaMapId", arenaMapId);
+        }
         if (nexusMarkerId != null) {
             tag.putUUID("NexusMarkerId", nexusMarkerId);
         }
@@ -255,7 +263,8 @@ public class WarDayState extends SavedData {
             boolean originalKeepInventory,
             double originalWorldBorderCenterX,
             double originalWorldBorderCenterZ,
-            double originalWorldBorderSize
+            double originalWorldBorderSize,
+            int arenaMapId
     ) {
         active = true;
         this.matchEndGameTime = matchEndGameTime;
@@ -272,6 +281,7 @@ public class WarDayState extends SavedData {
         this.originalWorldBorderCenterZ = originalWorldBorderCenterZ;
         this.originalWorldBorderSize = originalWorldBorderSize;
         this.worldBorderCaptured = true;
+        this.arenaMapId = arenaMapId;
         this.matchEntityBatchId = UUID.randomUUID();
         savedPlayers.clear();
         savedPlayers.putAll(players);
@@ -397,6 +407,7 @@ public class WarDayState extends SavedData {
         victoryActor = "";
         keepInventoryCaptured = false;
         worldBorderCaptured = false;
+        arenaMapId = -1;
         nexusMarkerId = null;
         matchEntityBatchId = null;
         defenderParticipants.clear();
@@ -523,6 +534,10 @@ public class WarDayState extends SavedData {
 
     public boolean worldBorderCaptured() {
         return worldBorderCaptured;
+    }
+
+    public OptionalInt arenaMapId() {
+        return arenaMapId >= 0 ? OptionalInt.of(arenaMapId) : OptionalInt.empty();
     }
 
     public Optional<UUID> nexusMarkerId() {
