@@ -30,6 +30,7 @@
     "SpringyBootItemMixin",
     "SteadfastSpikesEventsMixin",
     "SteadfastSpikesItemMixin",
+    "TeamChatPrefixMixin",
     "TooltipsUtilsMixin",
     "VampiricGloveItemMixin"
   ],

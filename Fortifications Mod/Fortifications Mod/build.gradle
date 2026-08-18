@@ -108,10 +108,16 @@ var classResetPolicyTest = tasks.register('classResetPolicyTest', JavaExec) {
     mainClass = 'com.example.fortifications.ClassResetPolicyTest'
 }
 
+var teamChatPrefixPolicyTest = tasks.register('teamChatPrefixPolicyTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.fortifications.TeamChatPrefixPolicyTest'
+}
+
 tasks.named('check') {
     dependsOn fortChestTeamAccessTest, rosterHealthTest, spectatorCycleTest,
             attackerTerrainPlanTest, journeyMapPrivacyTest, rapidBreakRuleTest, friendlyFireTest,
-            classResetPolicyTest
+            classResetPolicyTest, teamChatPrefixPolicyTest
 }
 
 tasks.named('test', Test) {
