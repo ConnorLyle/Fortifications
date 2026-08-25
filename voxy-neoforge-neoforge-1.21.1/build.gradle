@@ -27,6 +27,7 @@ sourceSets {
             exclude 'me/cortex/voxy/client/config/SodiumConfigBuilder.java'
             exclude 'me/cortex/voxy/client/config/VoxyConfigMenu.java'
             exclude 'me/cortex/voxy/client/config/IConfigPageSetter.java'
+            exclude 'me/cortex/voxy/client/config/VoxySodiumOptions.java'
 
             // ModMenu integration (Fabric-only)
             exclude 'me/cortex/voxy/client/config/ModMenuIntegration.java'
@@ -166,6 +167,21 @@ if (!isInGHA) {
     }
 }
 
+def sodiumBundle = configurations.create('sodiumBundle')
+sodiumBundle.transitive = false
+def sodiumCompileJar = layout.buildDirectory.file('sodium-compile/sodium-mod.jar')
+
+tasks.register('extractSodiumCompileJar', Copy) {
+    from({ zipTree(sodiumBundle.singleFile) }) {
+        include 'META-INF/jarjar/net.caffeinemc.sodium-neoforge-*-mod.jar'
+        eachFile { details ->
+            details.path = 'sodium-mod.jar'
+        }
+        includeEmptyDirs = false
+    }
+    into sodiumCompileJar.map { it.asFile.parentFile }
+}
+
 dependencies {
     // To change the versions see the gradle.properties file
     implementation "net.neoforged:neoforge:${project.neoforge_version}"
@@ -175,6 +191,8 @@ dependencies {
 
     // Match the Sodium version installed in the NeoForge 21.1.238 pack.
     implementation "net.caffeinemc:sodium-neoforge:${project.sodium_version}"
+    add('sodiumBundle', "net.caffeinemc:sodium-neoforge:${project.sodium_version}")
+    compileOnly files(sodiumCompileJar)
 
     // Match the Lithium version installed in the NeoForge 21.1.238 pack.
     implementation("maven.modrinth:lithium:${project.lithium_version}")
@@ -199,6 +217,7 @@ dependencies {
 
 def targetJavaVersion = 21
 tasks.withType(JavaCompile).configureEach {
+    dependsOn tasks.named('extractSodiumCompileJar')
     it.options.encoding = "UTF-8"
     it.options.release = targetJavaVersion
     it.options.deprecation = true
