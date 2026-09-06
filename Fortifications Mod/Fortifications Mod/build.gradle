@@ -56,7 +56,6 @@ dependencies {
     compileOnly files('../../mods/tunes_n_tomes-1.1.0-HOTFIX.jar')
     compileOnly files('../../mods/relics-1.21.1-0.12.8.jar')
     compileOnly files('../../mods/curios-neoforge-9.5.1+1.21.1.jar')
-    compileOnly files('../../mods/journeymap-api-neoforge-2.0.0-1.21.1.jar')
     compileOnly files('../../mods/puffish_skills-0.18.3-1.21-neoforge.jar')
 }
 
@@ -114,10 +113,29 @@ var teamChatPrefixPolicyTest = tasks.register('teamChatPrefixPolicyTest', JavaEx
     mainClass = 'com.example.fortifications.TeamChatPrefixPolicyTest'
 }
 
+var lootrProtectionPolicyTest = tasks.register('lootrProtectionPolicyTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.fortifications.LootrProtectionPolicyTest'
+}
+
+var bannedItemRegistryTest = tasks.register('bannedItemRegistryTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.fortifications.BannedItemRegistryTest'
+}
+
+var warDayLegalitySearchTest = tasks.register('warDayLegalitySearchTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.trove.warday.WarDayLegalitySearchTest'
+}
+
 tasks.named('check') {
     dependsOn fortChestTeamAccessTest, rosterHealthTest, spectatorCycleTest,
             attackerTerrainPlanTest, journeyMapPrivacyTest, rapidBreakRuleTest, friendlyFireTest,
-            classResetPolicyTest, teamChatPrefixPolicyTest
+            classResetPolicyTest, teamChatPrefixPolicyTest, lootrProtectionPolicyTest, bannedItemRegistryTest,
+            warDayLegalitySearchTest
 }
 
 tasks.named('test', Test) {

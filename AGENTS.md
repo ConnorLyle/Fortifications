@@ -17,6 +17,7 @@
 
 ## Work queue protocol
 
+- The balance and crash-prevention queue is [`FORTIFICATIONS_TODO.md`](FORTIFICATIONS_TODO.md). Read it before choosing or implementing those requests. Present an item-specific feasibility and implementation write-up before doing implementation work, and preserve/update its checklist and verification notes as work proceeds. The assessment and completion rules below also apply to that queue, with status recorded in `FORTIFICATIONS_TODO.md`.
 - The canonical backlog is [`WARDAY_TODO.md`](WARDAY_TODO.md). Read it before choosing or implementing War Day work.
 - Treat unchecked items in `WARDAY_TODO.md` as the active backlog. Do not maintain a second copy of the backlog checklist in this file, `HANDOFF.md`, or source comments. Workflow guidance may be repeated in `HANDOFF.md`, but task status lives only in `WARDAY_TODO.md`.
 - Reference a queue item in agent notes, plans, and handoffs using its section and exact task text so another agent can locate it unambiguously.
