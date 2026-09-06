@@ -150,6 +150,7 @@ public class WarDayCommands {
     private static final long ROSTER_PAGE_TICKS = 100L;
     private static final long PREPARATION_TICK_BUDGET_NANOS = 10_000_000L;
     private static final int PREPARATION_MAX_STEPS_PER_TICK = 65_536;
+    private static final int LEGALITY_NODE_LIMIT_PER_CORNER = 500_000;
     private static final SuggestionProvider<CommandSourceStack> TEAM_NAME_SUGGESTIONS = WarDayCommands::suggestTeamNames;
     private static final Map<UUID, PendingRespawn> PENDING_RESPAWNS = new HashMap<>();
     private static final Map<UUID, Integer> DEATH_COUNTS = new HashMap<>();
@@ -164,6 +165,7 @@ public class WarDayCommands {
     private static String lastRosterSignature = "";
     private PreparationJob preparationJob;
     private ClearJob clearJob;
+    private LegalityJob legalityJob;
 
     @SubscribeEvent
     public void registerCommands(RegisterCommandsEvent event) {
@@ -174,6 +176,12 @@ public class WarDayCommands {
                         .executes(context -> validate(context.getSource())))
                 .then(Commands.literal("scan")
                         .executes(context -> scan(context.getSource())))
+                .then(Commands.literal("legal")
+                        .executes(context -> legal(context.getSource()))
+                        .then(Commands.literal("status")
+                                .executes(context -> legalityStatus(context.getSource())))
+                        .then(Commands.literal("cancel")
+                                .executes(context -> cancelLegality(context.getSource()))))
                 .then(Commands.literal("status")
                         .executes(context -> status(context.getSource())))
                 .then(Commands.literal("blocks")
@@ -218,9 +226,9 @@ public class WarDayCommands {
             String label,
             String name
     ) {
-        if (preparationJob != null || clearJob != null) {
+        if (preparationJob != null || clearJob != null || legalityJob != null) {
             source.sendFailure(message(ChatFormatting.YELLOW,
-                    "Team configuration cannot change while an arena preparation or clear job is running."));
+                    "Team configuration cannot change while an arena preparation, clear, or legality job is running."));
             return 0;
         }
         String trimmed = name.trim();
@@ -344,7 +352,71 @@ public class WarDayCommands {
         return 1;
     }
 
+    private int legal(CommandSourceStack source) {
+        if (legalityJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "A War Day legality check is already running. Use /warday legal status or /warday legal cancel."));
+            return 0;
+        }
+        if (preparationJob != null || clearJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "Wait for the current arena preparation or clear job before starting a legality check."));
+            return 0;
+        }
+
+        Optional<ScanContext> scanContext = createScanContext(source);
+        if (scanContext.isEmpty()) {
+            return 0;
+        }
+        ScanContext context = scanContext.get();
+        TeamValidation validation = validateTeamNexus(
+                context.teamA(), context.nexuses(), context.chunkManager());
+        if (!validation.passed()) {
+            reportTeamValidation(source, validation);
+            source.sendFailure(message(ChatFormatting.RED,
+                    "Legality requires exactly one defender-owned nexus in a connected claim cluster."));
+            return 0;
+        }
+
+        BaseArea defenderBase = BaseArea.from(validation, context.chunkManager());
+        if (!reportAndCheckGuardrails(source, defenderBase)) {
+            return 0;
+        }
+
+        legalityJob = new LegalityJob(source, context.level(), defenderBase);
+        source.sendSuccess(() -> message(ChatFormatting.AQUA,
+                "War Day legality check started for all four defender-claim corners. "
+                        + "Use /warday legal status for progress or /warday legal cancel."), true);
+        return 1;
+    }
+
+    private int legalityStatus(CommandSourceStack source) {
+        if (legalityJob == null) {
+            source.sendSuccess(() -> message(ChatFormatting.GRAY,
+                    "No War Day legality check is running."), false);
+            return 0;
+        }
+        legalityJob.reportStatus(source);
+        return 1;
+    }
+
+    private int cancelLegality(CommandSourceStack source) {
+        if (legalityJob == null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "No War Day legality check is running."));
+            return 0;
+        }
+        legalityJob.cancel(source);
+        legalityJob = null;
+        return 1;
+    }
+
     private int preparePreview(CommandSourceStack source) {
+        if (legalityJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "A War Day legality check is running. Finish or cancel it before preparing."));
+            return 0;
+        }
         if (preparationJob != null) {
             source.sendFailure(message(ChatFormatting.YELLOW,
                     "A War Day preparation job is already running. Use /warday prepare status or /warday prepare cancel."));
@@ -389,6 +461,11 @@ public class WarDayCommands {
     }
 
     private int prepareConfirm(CommandSourceStack source) {
+        if (legalityJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "A War Day legality check is running. Finish or cancel it before preparing."));
+            return 0;
+        }
         if (preparationJob != null) {
             source.sendFailure(message(ChatFormatting.YELLOW,
                     "A War Day preparation job is already running. Use /warday prepare status or /warday prepare cancel."));
@@ -451,6 +528,11 @@ public class WarDayCommands {
     }
 
     private int clearDimension(CommandSourceStack source) {
+        if (legalityJob != null) {
+            source.sendFailure(message(ChatFormatting.YELLOW,
+                    "A War Day legality check is running. Finish or cancel it before clearing the dimension."));
+            return 0;
+        }
         if (preparationJob != null) {
             source.sendFailure(message(ChatFormatting.YELLOW,
                     "War Day preparation is running. Cancel or finish it before clearing the dimension."));
@@ -875,12 +957,18 @@ public class WarDayCommands {
     public void onServerStopping(ServerStoppingEvent event) {
         preparationJob = null;
         clearJob = null;
+        legalityJob = null;
         clearRapidBreakPenalties(event.getServer());
         DIG_HISTORY.clear();
     }
 
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
+        if (legalityJob != null) {
+            if (legalityJob.tick(event.getServer())) {
+                legalityJob = null;
+            }
+        }
         if (preparationJob != null) {
             if (preparationJob.tick(event.getServer())) {
                 preparationJob = null;
@@ -3889,6 +3977,14 @@ public class WarDayCommands {
         private int minBlockZ() {
             return minZ * 16;
         }
+
+        private int maxBlockX() {
+            return maxX * 16 + 15;
+        }
+
+        private int maxBlockZ() {
+            return maxZ * 16 + 15;
+        }
     }
 
     private record BaseArea(
@@ -3964,6 +4060,323 @@ public class WarDayCommands {
             }
         }
         return List.copyOf(chunks);
+    }
+
+    private final class LegalityJob {
+        private final CommandSourceStack source;
+        private final ServerLevel level;
+        private final BaseArea base;
+        private final List<ChunkDimPos> chunks;
+        private final Set<Long> claimChunks;
+        private final List<WarDayLegalitySearch.CornerTarget> corners;
+        private final List<LegalityCornerResult> results = new ArrayList<>();
+        private LegalityPhase phase = LegalityPhase.LOADING_CHUNKS;
+        private int chunkIndex;
+        private int cornerIndex;
+        private CornerIngressCursor ingressCursor;
+        private WarDayLegalitySearch.Cursor routeCursor;
+        private BlockPos activeIngress;
+        private boolean finished;
+
+        private LegalityJob(CommandSourceStack source, ServerLevel level, BaseArea base) {
+            this.source = source;
+            this.level = level;
+            this.base = base;
+            this.chunks = base.cluster().stream()
+                    .sorted(Comparator.comparingInt(ChunkDimPos::x).thenComparingInt(ChunkDimPos::z))
+                    .toList();
+            this.claimChunks = new HashSet<>();
+            for (ChunkDimPos chunk : base.cluster()) {
+                claimChunks.add(ChunkPos.asLong(chunk.x(), chunk.z()));
+            }
+            this.corners = WarDayLegalitySearch.cornerTargets(
+                    base.bounds().minBlockX(),
+                    base.bounds().minBlockZ(),
+                    base.bounds().maxBlockX(),
+                    base.bounds().maxBlockZ());
+        }
+
+        private boolean tick(MinecraftServer server) {
+            if (finished) {
+                return true;
+            }
+            if (server != source.getServer()) {
+                fail("Legality check stopped because the server instance changed.", null);
+                return true;
+            }
+
+            long deadline = System.nanoTime() + PREPARATION_TICK_BUDGET_NANOS;
+            int steps = 0;
+            try {
+                boolean continueThisTick = true;
+                while (!finished && continueThisTick && steps < PREPARATION_MAX_STEPS_PER_TICK) {
+                    continueThisTick = step();
+                    steps++;
+                    if ((steps & 63) == 0 && System.nanoTime() >= deadline) {
+                        break;
+                    }
+                }
+            } catch (RuntimeException exception) {
+                fail("Legality check failed during " + phase.label + ". Check the server log.", exception);
+            }
+            return finished;
+        }
+
+        private boolean step() {
+            return switch (phase) {
+                case LOADING_CHUNKS -> stepLoadChunk();
+                case FINDING_INGRESS -> stepFindIngress();
+                case SEARCHING_ROUTE -> stepSearchRoute();
+            };
+        }
+
+        private boolean stepLoadChunk() {
+            if (chunkIndex >= chunks.size()) {
+                phase = LegalityPhase.FINDING_INGRESS;
+                return false;
+            }
+            ChunkDimPos chunk = chunks.get(chunkIndex++);
+            level.getChunk(chunk.x(), chunk.z());
+            return false;
+        }
+
+        private boolean stepFindIngress() {
+            if (cornerIndex >= corners.size()) {
+                finish();
+                return false;
+            }
+            if (ingressCursor == null) {
+                ingressCursor = new CornerIngressCursor(corners.get(cornerIndex));
+            }
+            if (ingressCursor.advance()) {
+                return true;
+            }
+
+            Optional<BlockPos> ingress = ingressCursor.ingress();
+            if (ingress.isEmpty()) {
+                WarDayLegalitySearch.CornerTarget corner = corners.get(cornerIndex);
+                results.add(new LegalityCornerResult(
+                        corner.name(), null, null, 0, false,
+                        "no standable surface ingress exists inside the connected claim near this corner"));
+                nextCorner();
+                return false;
+            }
+
+            activeIngress = ingress.get();
+            WarDayLegalitySearch.Space space = new WarDayLegalitySearch.Space() {
+                @Override
+                public boolean isInside(int x, int z) {
+                    return isClaimedColumn(x, z);
+                }
+
+                @Override
+                public boolean isStandable(WarDayLegalitySearch.Point point) {
+                    return isSafeSpawnPos(level, new BlockPos(point.x(), point.y(), point.z()));
+                }
+
+                @Override
+                public boolean isGoal(WarDayLegalitySearch.Point point) {
+                    BlockPos nexus = base.nexus().pos();
+                    int dx = Math.abs(point.x() - nexus.getX());
+                    int dz = Math.abs(point.z() - nexus.getZ());
+                    return Math.max(dx, dz) == 1
+                            && point.y() >= nexus.getY() - 1
+                            && point.y() <= nexus.getY() + 1;
+                }
+            };
+            routeCursor = new WarDayLegalitySearch.Cursor(
+                    new WarDayLegalitySearch.Point(
+                            activeIngress.getX(), activeIngress.getY(), activeIngress.getZ()),
+                    space,
+                    LEGALITY_NODE_LIMIT_PER_CORNER);
+            phase = LegalityPhase.SEARCHING_ROUTE;
+            return false;
+        }
+
+        private boolean stepSearchRoute() {
+            if (routeCursor.advance()) {
+                return true;
+            }
+
+            WarDayLegalitySearch.Status status = routeCursor.status();
+            BlockPos reached = routeCursor.reached() == null
+                    ? null
+                    : new BlockPos(routeCursor.reached().x(), routeCursor.reached().y(), routeCursor.reached().z());
+            boolean legal = status == WarDayLegalitySearch.Status.REACHED;
+            String detail = switch (status) {
+                case REACHED -> "route reaches a standable attack position beside the nexus";
+                case NO_PATH -> "no walking route reaches the nexus without breaking blocks";
+                case NODE_LIMIT -> "search reached the " + LEGALITY_NODE_LIMIT_PER_CORNER + "-node safety limit";
+                case RUNNING -> "search ended unexpectedly";
+            };
+            results.add(new LegalityCornerResult(
+                    corners.get(cornerIndex).name(),
+                    activeIngress,
+                    reached,
+                    routeCursor.visitedCount(),
+                    legal,
+                    detail));
+            nextCorner();
+            return false;
+        }
+
+        private void nextCorner() {
+            cornerIndex++;
+            ingressCursor = null;
+            routeCursor = null;
+            activeIngress = null;
+            phase = LegalityPhase.FINDING_INGRESS;
+            if (cornerIndex >= corners.size()) {
+                finish();
+            }
+        }
+
+        private boolean isClaimedColumn(int x, int z) {
+            return claimChunks.contains(ChunkPos.asLong(Math.floorDiv(x, 16), Math.floorDiv(z, 16)));
+        }
+
+        private void finish() {
+            if (finished) {
+                return;
+            }
+            source.sendSuccess(() -> message(ChatFormatting.AQUA,
+                    "War Day legality results for defender " + base.team().getName().getString()
+                            + " at nexus " + formatPos(base.nexus().pos())), false);
+            for (LegalityCornerResult result : results) {
+                ChatFormatting color = result.legal() ? ChatFormatting.GREEN : ChatFormatting.RED;
+                String ingress = result.ingress() == null ? "none" : formatPos(result.ingress());
+                String reached = result.reached() == null ? "" : ", reached=" + formatPos(result.reached());
+                source.sendSuccess(() -> message(color,
+                        result.cornerName() + ": " + (result.legal() ? "LEGAL" : "ILLEGAL")
+                                + " - " + result.detail() + " (ingress=" + ingress + reached
+                                + ", visited=" + result.visitedNodes() + ")"), false);
+            }
+            boolean legal = results.size() == corners.size() && results.stream().allMatch(LegalityCornerResult::legal);
+            if (legal) {
+                source.sendSuccess(() -> message(ChatFormatting.GREEN,
+                        "LEGAL: the nexus is reachable from all four connected-claim corners."), true);
+            } else {
+                source.sendFailure(message(ChatFormatting.RED,
+                        "ILLEGAL: at least one connected-claim corner cannot reach the nexus without breaking blocks."));
+            }
+            finished = true;
+        }
+
+        private void reportStatus(CommandSourceStack output) {
+            String detail = switch (phase) {
+                case LOADING_CHUNKS -> chunkIndex + "/" + chunks.size() + " claim chunks";
+                case FINDING_INGRESS -> cornerProgress()
+                        + (ingressCursor == null ? "" : ", radius " + ingressCursor.distance());
+                case SEARCHING_ROUTE -> cornerProgress() + ", "
+                        + (routeCursor == null ? 0 : routeCursor.visitedCount()) + "/"
+                        + LEGALITY_NODE_LIMIT_PER_CORNER + " nodes";
+            };
+            output.sendSuccess(() -> message(ChatFormatting.AQUA,
+                    "War Day legality: " + phase.label + " (" + detail + ")"), false);
+        }
+
+        private String cornerProgress() {
+            if (cornerIndex >= corners.size()) {
+                return "4/4 corners";
+            }
+            return cornerIndex + "/4 complete, checking " + corners.get(cornerIndex).name();
+        }
+
+        private void cancel(CommandSourceStack output) {
+            output.sendSuccess(() -> message(ChatFormatting.GREEN,
+                    "War Day legality check cancelled. No world or prepared state was changed."), true);
+            finished = true;
+        }
+
+        private void fail(String text, RuntimeException exception) {
+            if (exception != null) {
+                WarDayMod.LOGGER.error("War Day legality check failed during {}", phase.label, exception);
+            } else {
+                WarDayMod.LOGGER.warn("War Day legality check stopped during {}: {}", phase.label, text);
+            }
+            source.sendFailure(message(ChatFormatting.RED, text));
+            finished = true;
+        }
+
+        private final class CornerIngressCursor {
+            private final WarDayLegalitySearch.CornerTarget corner;
+            private final int maximumDistance;
+            private int distance;
+            private int ringIndex;
+            private BlockPos ingress;
+            private boolean exhausted;
+
+            private CornerIngressCursor(WarDayLegalitySearch.CornerTarget corner) {
+                this.corner = corner;
+                this.maximumDistance = Math.max(base.bounds().blockWidth(), base.bounds().blockDepth()) - 1;
+            }
+
+            private boolean advance() {
+                if (ingress != null || exhausted) {
+                    return false;
+                }
+                if (distance > maximumDistance) {
+                    exhausted = true;
+                    return false;
+                }
+
+                int currentDistance = distance;
+                WarDayAttackerTerrainPlan.ColumnOffset offset = WarDayAttackerTerrainPlan.nearestRingOffset(
+                        currentDistance, ringIndex++);
+                if (ringIndex >= WarDayAttackerTerrainPlan.nearestRingSize(currentDistance)) {
+                    distance++;
+                    ringIndex = 0;
+                }
+
+                int x = corner.x() + offset.x();
+                int z = corner.z() + offset.z();
+                if (x < base.bounds().minBlockX() || x > base.bounds().maxBlockX()
+                        || z < base.bounds().minBlockZ() || z > base.bounds().maxBlockZ()
+                        || !isClaimedColumn(x, z)) {
+                    return true;
+                }
+
+                BlockPos candidate = new BlockPos(
+                        x,
+                        level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z),
+                        z);
+                if (isSafeSpawnPos(level, candidate)) {
+                    ingress = candidate;
+                    return false;
+                }
+                return true;
+            }
+
+            private Optional<BlockPos> ingress() {
+                return Optional.ofNullable(ingress);
+            }
+
+            private int distance() {
+                return Math.min(distance, maximumDistance);
+            }
+        }
+    }
+
+    private enum LegalityPhase {
+        LOADING_CHUNKS("loading connected claim chunks"),
+        FINDING_INGRESS("finding a corner ingress"),
+        SEARCHING_ROUTE("searching a player route");
+
+        private final String label;
+
+        LegalityPhase(String label) {
+            this.label = label;
+        }
+    }
+
+    private record LegalityCornerResult(
+            String cornerName,
+            BlockPos ingress,
+            BlockPos reached,
+            int visitedNodes,
+            boolean legal,
+            String detail
+    ) {
     }
 
     private static final class ClearJob {

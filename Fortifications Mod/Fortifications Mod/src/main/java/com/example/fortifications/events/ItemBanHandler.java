@@ -12,6 +12,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
@@ -20,6 +21,7 @@ import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
 import top.theillusivec4.curios.api.CuriosApi;
+import top.theillusivec4.curios.api.event.CurioCanEquipEvent;
 
 @EventBusSubscriber(modid = FortificationsMod.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
 public final class ItemBanHandler {
@@ -36,10 +38,17 @@ public final class ItemBanHandler {
         }
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onPlayerTick(PlayerTickEvent.Pre event) {
-        if (event.getEntity() instanceof ServerPlayer player && player.tickCount % 5 == 0) {
+        if (event.getEntity() instanceof ServerPlayer player) {
             removeBannedPlayerItems(player);
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onCurioCanEquip(CurioCanEquipEvent event) {
+        if (isBanned(event.getStack())) {
+            event.setEquipResult(TriState.FALSE);
         }
     }
 

@@ -21,6 +21,7 @@ public final class BannedItemRegistry {
             "reliquified_irons_spells_and_spellbooks:dimension_key",
             "reliquified_irons_spells_and_spellbooks:mirror_of_transgression",
             "reliquified_irons_spells_and_spellbooks:ring_of_blades",
+            "reliquified_irons_spells_and_spellbooks:sinner_crown",
             "simplyswords:awakened_lichblade",
             "simplyswords:chompolotl",
             "simplyswords:decaying_relic",
